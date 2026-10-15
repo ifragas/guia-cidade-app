@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "",
+    "name": "Guia-Cidade-App",
     "slug": "guia-cidade-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/logo.png",
@@ -20,13 +20,22 @@
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.ianfraga.guiacidadeapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-localization"
-    ]
+      "expo-localization",
+      "expo-image",
+      "expo-status-bar",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4bdd71a6-f2ca-4d92-abd9-fdb2698f80a2"
+      }
+    }
   }
 }
