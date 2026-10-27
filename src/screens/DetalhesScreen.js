@@ -24,26 +24,82 @@ import { isAbertoAgora } from '../utils/ScheduleHelper';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 
+const DIAS_SEMANA_LABELS = [
+  { id: 'segunda', label: 'Segunda-feira' },
+  { id: 'terca', label: 'Terça-feira' },
+  { id: 'quarta', label: 'Quarta-feira' },
+  { id: 'quinta', label: 'Quinta-feira' },
+  { id: 'sexta', label: 'Sexta-feira' },
+  { id: 'sabado', label: 'Sábado' },
+  { id: 'domingo', label: 'Domingo' }
+];
+
 export default function DetalhesScreen({ route }) {
-  const item = route.params;
-  const { id, nome, descricao, endereco, horario, imagem, imagens, tipo, latitude, longitude } = item;
+  const initialItem = route.params || {};
+  const { id } = initialItem;
   
+  const [item, setItem] = useState(initialItem);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFavorito, setIsFavorito] = useState(false);
   const flatListRef = useRef(null);
   const { t } = useTranslation();
   const { colors, isDark } = useThemeColors();
 
-  // Verifica o estado de abertura com base na string de horário
-  const estaAberto = horario ? isAbertoAgora(horario) : null;
+  // Busca os dados completos e atualizados diretamente na API usando a rota dinâmica
+  useEffect(() => {
+    async function fetchDetalhesCompletos() {
+      if (!id) return;
+      try {
+        let rotaTipo = 'pontos-turisticos';
+        const tipoAtual = initialItem.tipo;
+        if (tipoAtual) {
+          const tLower = tipoAtual.toLowerCase();
+          if (tLower.includes('restaurante')) rotaTipo = 'restaurantes';
+          else if (tLower.includes('acomodacao') || tLower.includes('hotel')) rotaTipo = 'acomodacoes';
+        }
 
-  const parsedLat = parseFloat(latitude);
-  const parsedLng = parseFloat(longitude);
+        const url = `https://turismo-api-vv62.onrender.com/api/${rotaTipo}`;
+        const response = await fetch(url);
+        const textResponse = await response.text();
+
+        if (textResponse.trim().startsWith('[')) {
+          const lista = JSON.parse(textResponse);
+          const itemAtualizado = lista.find(el => el.id === id);
+          if (itemAtualizado) {
+            setItem(prev => ({ ...prev, ...itemAtualizado }));
+          }
+        }
+      } catch (error) {
+        console.log('Erro ao buscar detalhes completos da API:', error);
+      }
+    }
+    fetchDetalhesCompletos();
+  }, [id]);
+
+  const { nome, descricao, endereco, horario, horarios, sempreAberto, imagem, imagens, tipo, latitude, longitude, coordenadas } = item;
+
+  // Tratamento e unificação robusta das coordenadas ("lat, lng" ou campos individuais)
+  let lat = latitude;
+  let lng = longitude;
+  if (coordenadas && typeof coordenadas === 'string' && coordenadas.includes(',')) {
+    const parts = coordenadas.split(',');
+    if (parts.length === 2) {
+      lat = parts[0].trim();
+      lng = parts[1].trim();
+    }
+  }
+
+  const parsedLat = parseFloat(lat);
+  const parsedLng = parseFloat(lng);
   const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLng);
   const imageList = Array.isArray(imagens) && imagens.length > 0 ? imagens : [imagem];
 
+  // Verifica se está aberto utilizando o objeto completo do item
+  const estaAberto = isAbertoAgora(item);
+
   useEffect(() => {
     async function checkFavorito() {
+      if (!id) return;
       const favs = await getFavoritos();
       if (favs.includes(id)) {
         setIsFavorito(true);
@@ -53,6 +109,7 @@ export default function DetalhesScreen({ route }) {
   }, [id]);
 
   const handleToggleFavorito = async () => {
+    if (!id) return;
     const atualizados = await toggleFavorito(id);
     setIsFavorito(atualizados.includes(id));
   };
@@ -60,7 +117,7 @@ export default function DetalhesScreen({ route }) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Confira ${nome} no Guia Turístico de Riozinho! ${endereco ? 'Endereço: ' + endereco : ''}`,
+        message: `Confira ${nome} no Guia Turístico! ${endereco ? 'Endereço: ' + endereco : ''}`,
       });
     } catch (error) {
       Alert.alert(t('error', 'Erro'), 'Não foi possível partilhar o local.');
@@ -81,14 +138,13 @@ export default function DetalhesScreen({ route }) {
     }
   };
 
-  // Abre as opções de navegação nativas (ActionSheet no iOS / Alert no Android)
   const abrirNoMapa = () => {
     if (!hasValidCoords) {
       Alert.alert(t('locationUnavailable', 'Localização indisponível'));
       return;
     }
 
-    const label = encodeURIComponent(nome);
+    const label = encodeURIComponent(nome || 'Local');
 
     const opcoes = [
       {
@@ -157,6 +213,8 @@ export default function DetalhesScreen({ route }) {
     }
   };
 
+  const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
+
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 30 }}>
       {/* Carrossel de imagens */}
@@ -223,45 +281,68 @@ export default function DetalhesScreen({ route }) {
       </View>
 
       <View style={styles.secao}>
-        <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description')}</Text>
+        <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description', 'Descrição')}</Text>
         <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao}</Text>
       </View>
 
       {endereco && (
         <View style={styles.secao}>
-          <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('address')}</Text>
+          <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('address', 'Endereço')}</Text>
           <Text style={[styles.texto, { color: colors.textSecondary }]}>{endereco}</Text>
         </View>
       )}
 
-      {/* Secção de Horários com Badge de Status de Funcionamento */}
-      {horario && (
-        <View style={styles.secao}>
-          <View style={styles.horarioHeaderRow}>
-            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule')}</Text>
-            {estaAberto !== null && (
-              <View style={[
-                styles.statusBadge, 
-                { 
-                  backgroundColor: estaAberto ? 'rgba(40, 167, 69, 0.15)' : 'rgba(220, 53, 69, 0.15)',
-                  borderColor: estaAberto ? '#28a745' : '#dc3545',
-                }
-              ]}>
-                <Text style={{ color: estaAberto ? '#28a745' : '#dc3545', fontWeight: 'bold', fontSize: 12 }}>
-                  {estaAberto ? '● Aberto Agora' : '● Fechado'}
-                </Text>
-              </View>
-            )}
+      {/* Secção de Horários / Sempre Aberto com Badge de Status */}
+      <View style={styles.secao}>
+        <View style={styles.horarioHeaderRow}>
+          <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
+          <View style={[
+            styles.statusBadge, 
+            { 
+              backgroundColor: semAbertoBadgeBg(estaAberto),
+              borderColor: semAbertoBadgeBorder(estaAberto),
+            }
+          ]}>
+            <Text style={{ color: semAbertoBadgeColor(estaAberto), fontWeight: 'bold', fontSize: 12 }}>
+              {sempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
+            </Text>
           </View>
-          <Text style={[styles.texto, { color: colors.textSecondary }]}>{horario}</Text>
         </View>
-      )}
+
+        {sempreAberto ? (
+          <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f0fdf4', borderColor: '#10b981' }]}>
+            <Ionicons name="time-outline" size={20} color="#10b981" />
+            <Text style={[styles.sempreAbertoText, { color: colors.textPrimary }]}>
+              Este local possui acesso livre a qualquer momento, sem restrição de horários.
+            </Text>
+          </View>
+        ) : hasHorariosObj ? (
+          <View style={styles.horariosListaContainer}>
+            {DIAS_SEMANA_LABELS.map((dia) => {
+              const info = horarios[dia.id];
+              if (!info) return null;
+              return (
+                <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+                  <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
+                  <Text style={styles.horarioHorasText}>
+                    {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <Text style={[styles.texto, { color: colors.textSecondary }]}>
+            {horario || 'Horário não especificado'}
+          </Text>
+        )}
+      </View>
 
       {/* Cartão de Acesso ao Mapa com botão "Ver no mapa" */}
       {hasValidCoords && (
         <View style={[styles.mapContainer, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
           <View style={styles.mapFallback}>
-            <Ionicons name="location" size={36} color="#4285F4" style={{ marginBottom: 8 }} />
+            <Ionicons name="location" size={36} color="#10b981" style={{ marginBottom: 8 }} />
             <Text style={[styles.mapFallbackTitle, { color: colors.textPrimary }]}>{nome}</Text>
             <Text style={[styles.mapFallbackText, { color: colors.textSecondary }]}>{endereco || 'Ver localização exata no mapa'}</Text>
             <TouchableOpacity style={styles.botaoMapaInterno} onPress={abrirNoMapa}>
@@ -272,6 +353,17 @@ export default function DetalhesScreen({ route }) {
       )}
     </ScrollView>
   );
+}
+
+// Funções auxiliares de cores atualizadas para o badge
+function semAbertoBadgeBg(estaAberto) {
+  return estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)';
+}
+function semAbertoBadgeBorder(estaAberto) {
+  return estaAberto ? '#10b981' : '#e11d48';
+}
+function semAbertoBadgeColor(estaAberto) {
+  return estaAberto ? '#10b981' : '#e11d48';
 }
 
 const styles = StyleSheet.create({
@@ -305,7 +397,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   titulo: { fontSize: 26, fontWeight: 'bold', marginBottom: 10 },
-  tipo: { fontSize: 16, color: '#0066cc', fontWeight: '600' },
+  tipo: { fontSize: 16, color: '#10b981', fontWeight: '600' },
   infoBox: {
     padding: 10,
     borderRadius: 8,
@@ -318,7 +410,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   statusBadge: {
     paddingHorizontal: 10,
@@ -326,6 +418,34 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
+  sempreAbertoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 10,
+    marginTop: 4,
+  },
+  sempreAbertoText: {
+    fontSize: 14,
+    flex: 1,
+    lineHeight: 20,
+  },
+  horariosListaContainer: {
+    gap: 6,
+    marginTop: 4,
+  },
+  horarioRowItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  horarioDiaLabel: { fontSize: 14, fontWeight: '600' },
+  horarioHorasText: { fontSize: 14, color: '#10b981', fontWeight: '500' },
   texto: { fontSize: 16, lineHeight: 22 },
   mapContainer: {
     height: 200,
@@ -339,7 +459,7 @@ const styles = StyleSheet.create({
   mapFallbackTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4, textAlign: 'center' },
   mapFallbackText: { fontSize: 14, marginBottom: 15, textAlign: 'center' },
   botaoMapaInterno: {
-    backgroundColor: '#4285F4',
+    backgroundColor: '#10b981',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,

@@ -191,7 +191,7 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Widget de Clima em Riozinho */}
+      {/* Widget de Clima em Riozinho atualizado com Mínima e Máxima */}
       {clima && (
         <View style={[styles.weatherWidget, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
           <View style={styles.weatherInfoLeft}>
@@ -201,7 +201,14 @@ export default function HomeScreen({ navigation }) {
               <Text style={[styles.weatherDesc, { color: colors.textSecondary }]}>{clima.descricao}</Text>
             </View>
           </View>
-          <Text style={[styles.weatherTemp, { color: colors.textPrimary }]}>{clima.temperatura}°C</Text>
+          <View style={styles.weatherInfoRight}>
+            <Text style={[styles.weatherTemp, { color: colors.textPrimary }]}>{clima.temperatura}°C</Text>
+            {clima.minima !== null && clima.maxima !== null && (
+              <Text style={[styles.weatherMinMax, { color: colors.textSecondary }]}>
+                Mín: {clima.minima}°C | Máx: {clima.maxima}°C
+              </Text>
+            )}
+          </View>
         </View>
       )}
 
@@ -309,7 +316,9 @@ const styles = StyleSheet.create({
   weatherInfoLeft: { flexDirection: 'row', alignItems: 'center' },
   weatherCity: { fontSize: 14, fontWeight: 'bold' },
   weatherDesc: { fontSize: 12 },
-  weatherTemp: { fontSize: 22, fontWeight: 'bold' },
+  weatherInfoRight: { alignItems: 'flex-end' },
+  weatherTemp: { fontSize: 20, fontWeight: 'bold' },
+  weatherMinMax: { fontSize: 11, marginTop: 2 },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',

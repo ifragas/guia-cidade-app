@@ -19,7 +19,8 @@ const interpretarWMOCodigo = (code) => {
 
 export const obterClimaRiozinho = async () => {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${RIOZINHO_LAT}&longitude=${RIOZINHO_LNG}&current_weather=true`;
+    // Incluído daily=temperature_2m_max,temperature_2m_min e timezone automático
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${RIOZINHO_LAT}&longitude=${RIOZINHO_LNG}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
     const response = await fetch(url);
     
     if (!response.ok) throw new Error('Erro ao buscar clima');
@@ -28,8 +29,14 @@ export const obterClimaRiozinho = async () => {
     const weather = data.current_weather;
     const infoClima = interpretarWMOCodigo(weather.weathercode);
 
+    // Extrai a mínima e máxima do primeiro dia (índice 0 correspondente ao dia de hoje)
+    const tempMax = data.daily?.temperature_2m_max?.[0] ?? null;
+    const tempMin = data.daily?.temperature_2m_min?.[0] ?? null;
+
     return {
       temperatura: Math.round(weather.temperature),
+      maxima: tempMax !== null ? Math.round(tempMax) : null,
+      minima: tempMin !== null ? Math.round(tempMin) : null,
       vento: Math.round(weather.windspeed),
       icone: infoClima.icon,
       descricao: infoClima.desc,

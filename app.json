@@ -1,6 +1,7 @@
+
 {
   "expo": {
-    "name": "Guia-Cidade-App",
+    "name": "Guia Turistico de Riozinho",
     "slug": "guia-cidade-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,7 +21,7 @@
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
+      
       "package": "com.ianfraga.guiacidadeapp"
     },
     "web": {
@@ -30,7 +31,15 @@
       "expo-localization",
       "expo-image",
       "expo-status-bar",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class * extends androidx.work.InputMerger { <init>(); }"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
