@@ -11,8 +11,9 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# WorkManager / Room - corrigir crash de inicialização em builds release
+# Add any project specific keep options here:
+
+# @generated begin expo-build-properties - expo prebuild (DO NOT MODIFY)
 -keep class * extends androidx.room.RoomDatabase { <init>(); }
 -keep class * extends androidx.work.InputMerger { <init>(); }
-
-# Add any project specific keep options here:
+# @generated end expo-build-properties

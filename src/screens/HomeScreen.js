@@ -4,12 +4,12 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   Alert,
   RefreshControl,
   TextInput,
   ScrollView,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -18,13 +18,19 @@ import * as Location from 'expo-location';
 import { calcularDistancia } from '../utils/LocationHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { salvarCache, obterCache } from '../utils/CacheHelper';
-import { obterClimaRiozinho } from '../services/WeatherService'; // 🔹 Import do clima
+import { obterClimaRiozinho } from '../services/WeatherService';
+import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 
-const API_URL = 'https://turismo-api-vv62.onrender.com/api/pontos-turisticos';
-const CACHE_KEY = 'pontos_turisticos';
+const ENDPOINTS = {
+  turismo: 'https://turismo-api-vv62.onrender.com/api/pontos-turisticos',
+  restaurantes: 'https://turismo-api-vv62.onrender.com/api/restaurantes',
+  acomodacoes: 'https://turismo-api-vv62.onrender.com/api/acomodacoes',
+};
+
+const CACHE_KEY = 'global_discover_data_v12';
 
 export default function HomeScreen({ navigation }) {
-  const [pontos, setPontos] = useState([]);
+  const [allData, setAllData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,16 +38,14 @@ export default function HomeScreen({ navigation }) {
   const [userLocation, setUserLocation] = useState(null);
   const [ordenarPorProximidade, setOrdenarPorProximidade] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
-  const [clima, setClima] = useState(null); // 🔹 Estado do clima
+  const [favoritosIds, setFavoritosIds] = useState([]);
 
   const { t } = useTranslation();
-  const { colors } = useThemeColors();
+  const { colors, isDark } = useThemeColors();
 
-  const carregarClima = async () => {
-    const dadosClima = await obterClimaRiozinho();
-    if (dadosClima) {
-      setClima(dadosClima);
-    }
+  const carregarFavoritos = async () => {
+    const favs = await getFavoritos();
+    setFavoritosIds(favs);
   };
 
   const obterLocalizacao = async () => {
@@ -58,24 +62,62 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const buscarPontos = async () => {
+  const buscarTodosDados = async () => {
     try {
-      const response = await fetch(API_URL);
-      if (!response.ok) throw new Error('Erro na API');
-      const data = await response.json();
+      const [resTurismo, resRestaurantes, resAcomodacoes] =
+        await Promise.allSettled([
+          fetch(ENDPOINTS.turismo).then((res) => (res.ok ? res.json() : [])),
+          fetch(ENDPOINTS.restaurantes).then((res) => (res.ok ? res.json() : [])),
+          fetch(ENDPOINTS.acomodacoes).then((res) => (res.ok ? res.json() : [])),
+        ]);
 
-      setPontos(data);
-      setIsOffline(false);
-      await salvarCache(CACHE_KEY, data);
+      const turismoData = (
+        resTurismo.status === 'fulfilled' ? resTurismo.value : []
+      ).map((item) => ({
+        ...item,
+        categoriaPai: 'Turismo',
+        tipoBadge: 'Turismo',
+      }));
+
+      const restaurantesData = (
+        resRestaurantes.status === 'fulfilled' ? resRestaurantes.value : []
+      ).map((item) => ({
+        ...item,
+        categoriaPai: 'Restaurantes',
+        tipoBadge: 'Gastronomia',
+      }));
+
+      const acomodacoesData = (
+        resAcomodacoes.status === 'fulfilled' ? resAcomodacoes.value : []
+      ).map((item) => ({
+        ...item,
+        categoriaPai: 'Acomodações',
+        tipoBadge: 'Hospedagem',
+      }));
+
+      const combinados = [
+        ...turismoData,
+        ...restaurantesData,
+        ...acomodacoesData,
+      ];
+
+      if (combinados.length > 0) {
+        setAllData(combinados);
+        setIsOffline(false);
+        await salvarCache(CACHE_KEY, combinados);
+      } else {
+        throw new Error('Sem resposta');
+      }
     } catch (error) {
-      console.log('Sem conexão. Buscando dados do cache local...');
       const dadosEmCache = await obterCache(CACHE_KEY);
-
       if (dadosEmCache && dadosEmCache.length > 0) {
-        setPontos(dadosEmCache);
+        setAllData(dadosEmCache);
         setIsOffline(true);
       } else {
-        Alert.alert('Atenção', 'Não foi possível carregar as atrações e não há dados offline salvos.');
+        Alert.alert(
+          'Atenção',
+          'Não foi possível carregar as atrações e não há dados offline salvos.'
+        );
       }
     } finally {
       setLoading(false);
@@ -84,38 +126,73 @@ export default function HomeScreen({ navigation }) {
   };
 
   useEffect(() => {
-    buscarPontos();
+    buscarTodosDados();
     obterLocalizacao();
-    carregarClima();
+    carregarFavoritos();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      carregarFavoritos();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    buscarPontos();
+    buscarTodosDados();
     obterLocalizacao();
-    carregarClima();
+    carregarFavoritos();
   };
 
-  const categories = ['Todos', 'Cascata', 'Trilha', 'Camping'];
+  const handleToggleFavorito = async (idItem, e) => {
+    if (e) e.stopPropagation();
+    if (!idItem) return;
+    const atualizados = await toggleFavorito(idItem);
+    setFavoritosIds(atualizados);
+  };
 
-  let processados = pontos.filter(ponto => {
-    const matchesSearch = ponto.nome.toLowerCase().includes(searchQuery.toLowerCase());
+  const categories = [
+    'Todos',
+    'Turismo',
+    'Restaurantes',
+    'Acomodações',
+  ];
+
+  let processados = allData.filter((item) => {
+    const nomeItem = item.nome || item.title || '';
+    const descItem = item.descricao || item.description || '';
+
+    const matchesSearch =
+      nomeItem.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      descItem.toLowerCase().includes(searchQuery.toLowerCase());
+
     const matchesCategory =
       selectedCategory === 'Todos' ||
-      ponto.nome.toLowerCase().includes(selectedCategory.toLowerCase()) ||
-      (ponto.descricao && ponto.descricao.toLowerCase().includes(selectedCategory.toLowerCase()));
+      item.categoriaPai === selectedCategory;
+
     return matchesSearch && matchesCategory;
   });
 
   if (userLocation) {
-    processados = processados.map(ponto => {
-      const distancia = calcularDistancia(
-        userLocation.latitude,
-        userLocation.longitude,
-        parseFloat(ponto.latitude),
-        parseFloat(ponto.longitude)
-      );
-      return { ...ponto, distanciaNum: distancia ? parseFloat(distancia) : 9999 };
+    processados = processados.map((item) => {
+      const lat = parseFloat(item.latitude);
+      const lng = parseFloat(item.longitude);
+
+      const distancia =
+        !isNaN(lat) && !isNaN(lng)
+          ? calcularDistancia(
+              userLocation.latitude,
+              userLocation.longitude,
+              lat,
+              lng
+            )
+          : null;
+
+      return {
+        ...item,
+        distanciaNum: distancia ? parseFloat(distancia) : 9999,
+      };
     });
 
     if (ordenarPorProximidade) {
@@ -123,175 +200,449 @@ export default function HomeScreen({ navigation }) {
     }
   }
 
-  const renderItem = ({ item }) => {
-    const distanciaKm = userLocation && item.latitude && item.longitude 
-      ? calcularDistancia(userLocation.latitude, userLocation.longitude, parseFloat(item.latitude), parseFloat(item.longitude))
-      : null;
+  const navegarParaDetalhes = (item) => {
+    const imagemCap =
+      item.imagem ||
+      item.imagens?.[0] ||
+      'https://images.unsplash.com/photo-1432821596592-e2c18b78144f';
+
+    navigation.navigate('Detalhes', {
+      id: item.id,
+      nome: item.nome,
+      descricao: item.descricao,
+      endereco: item.endereco,
+      horario: item.horario,
+      imagem: imagemCap,
+      imagens: item.imagens || [imagemCap],
+      tipo: item.tipoBadge,
+      latitude: item.latitude,
+      longitude: item.longitude,
+    });
+  };
+
+  const renderCardTravelStyle = (item) => {
+    const isFavorito = favoritosIds.includes(item.id);
+
+    const lat = parseFloat(item.latitude);
+    const lng = parseFloat(item.longitude);
+
+    const distanciaKm =
+      userLocation && !isNaN(lat) && !isNaN(lng)
+        ? calcularDistancia(
+            userLocation.latitude,
+            userLocation.longitude,
+            lat,
+            lng
+          )
+        : null;
+
+    const imagemCap =
+      item.imagem ||
+      item.imagens?.[0] ||
+      'https://images.unsplash.com/photo-1432821596592-e2c18b78144f';
 
     return (
       <TouchableOpacity
-        style={[styles.card, { borderColor: colors.cardBorder, backgroundColor: colors.cardBackground }]}
-        onPress={() =>
-          navigation.navigate('Detalhes', {
-            id: item.id,
-            nome: item.nome,
-            descricao: item.descricao,
-            endereco: item.endereco,
-            horario: item.horario,
-            imagem: item.imagem,
-            imagens: item.imagens || [],
-            tipo: 'Ponto Turístico',
-            latitude: item.latitude,
-            longitude: item.longitude,
-          })
-        }
+        key={`${item.categoriaPai}-${item.id}`}
+        activeOpacity={0.9}
+        style={[
+          styles.travelCard,
+          { backgroundColor: isDark ? '#1e1e1e' : '#ffffff' },
+        ]}
+        onPress={() => navegarParaDetalhes(item)}
       >
-        <ImageBackground
-          source={{ uri: item.imagem || item.imagens?.[0] || '/placeholder.jpg' }}
-          style={styles.cardImage}
-          contentFit="cover"
-          placeholder={require('../../assets/placeholder.jpg')}
-          cachePolicy="memory-disk"
-        >
-          <View style={styles.cardOverlay}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardNome}>{item.nome}</Text>
-              {distanciaKm && (
-                <View style={styles.distanceBadge}>
-                  <Ionicons name="location" size={12} color="#fff" />
-                  <Text style={styles.distanceText}>{distanciaKm} km</Text>
-                </View>
-              )}
+        {/* Imagem Superior de Ponta a Ponta */}
+        <View style={styles.travelCardImageWrapper}>
+          <ImageBackground
+            source={{ uri: imagemCap }}
+            style={styles.travelCardImage}
+            contentFit="cover"
+            placeholder={require('../../assets/placeholder.jpg')}
+            cachePolicy="memory-disk"
+          >
+            <View style={styles.travelTypeBadge}>
+              <Text style={styles.travelTypeBadgeText}>{item.tipoBadge}</Text>
             </View>
-            <Text style={styles.cardDescricao} numberOfLines={2}>
-              {item.descricao ? item.descricao.substring(0, 100) + '...' : ''}
+
+            <TouchableOpacity
+              style={styles.travelHeartButton}
+              onPress={(e) => handleToggleFavorito(item.id, e)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={isFavorito ? 'heart' : 'heart-outline'}
+                size={18}
+                color={isFavorito ? '#ff3b30' : '#333'}
+              />
+            </TouchableOpacity>
+          </ImageBackground>
+        </View>
+
+        {/* Informações na Parte Inferior */}
+        <View style={styles.travelCardContent}>
+          <View style={styles.travelCardHeaderRow}>
+            <Text
+              style={[
+                styles.travelCardTitle,
+                { color: colors.textPrimary },
+              ]}
+              numberOfLines={1}
+            >
+              {item.nome}
             </Text>
+            {distanciaKm && (
+              <View style={styles.travelDistanceRow}>
+                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                <Text style={[styles.travelDistanceText, { color: colors.textSecondary }]}>
+                  {distanciaKm} km
+                </Text>
+              </View>
+            )}
           </View>
-        </ImageBackground>
+
+          <Text
+            style={[
+              styles.travelCardSub,
+              { color: colors.textSecondary },
+            ]}
+            numberOfLines={1}
+          >
+            {item.endereco || item.descricao || 'Riozinho, RS'}
+          </Text>
+        </View>
       </TouchableOpacity>
     );
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.searchContainerSkeleton, { backgroundColor: colors.skeleton }]} />
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <View
+          style={[
+            styles.searchContainerSkeleton,
+            { backgroundColor: colors.skeleton },
+          ]}
+        />
+        <View
+          style={[
+            styles.cardSkeleton,
+            { backgroundColor: colors.skeleton },
+          ]}
+        />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {isOffline && (
-        <View style={styles.offlineBanner}>
-          <Ionicons name="cloud-offline-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-          <Text style={styles.offlineText}>Modo Offline: exibindo informações salvas.</Text>
-        </View>
-      )}
+    <View style={styles.mainWrapper}>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
-      {/* Widget de Clima em Riozinho atualizado com Mínima e Máxima */}
-      {clima && (
-        <View style={[styles.weatherWidget, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-          <View style={styles.weatherInfoLeft}>
-            <Ionicons name={clima.icone} size={28} color={colors.textPrimary} style={{ marginRight: 8 }} />
-            <View>
-              <Text style={[styles.weatherCity, { color: colors.textPrimary }]}>Riozinho, RS</Text>
-              <Text style={[styles.weatherDesc, { color: colors.textSecondary }]}>{clima.descricao}</Text>
-            </View>
-          </View>
-          <View style={styles.weatherInfoRight}>
-            <Text style={[styles.weatherTemp, { color: colors.textPrimary }]}>{clima.temperatura}°C</Text>
-            {clima.minima !== null && clima.maxima !== null && (
-              <Text style={[styles.weatherMinMax, { color: colors.textSecondary }]}>
-                Mín: {clima.minima}°C | Máx: {clima.maxima}°C
-              </Text>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* Barra de pesquisa */}
-      <View style={[styles.searchContainer, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-        <TextInput
-          style={[styles.searchInput, { color: colors.textPrimary }]}
-          placeholder={t('searchPlaceholder', 'Pesquisar locais...')}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor={colors.textSecondary}
-        />
-        <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
-      </View>
-
-      {/* Filtros e Proximidade */}
-      <View style={styles.filterWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
-          <TouchableOpacity
-            style={[
-              styles.filterChip,
-              { backgroundColor: colors.chipBackground, borderColor: colors.chipBorder },
-              ordenarPorProximidade && styles.filterChipActive,
-            ]}
-            onPress={() => setOrdenarPorProximidade(!ordenarPorProximidade)}
-          >
-            <Ionicons 
-              name="navigate" 
-              size={14} 
-              color={ordenarPorProximidade ? '#fff' : colors.textSecondary} 
-              style={{ marginRight: 4 }} 
-            />
-            <Text style={[styles.filterChipText, { color: colors.chipText }, ordenarPorProximidade && styles.filterChipTextActive]}>
-              Mais Próximos
-            </Text>
-          </TouchableOpacity>
-
-          {categories.map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[
-                styles.filterChip,
-                { backgroundColor: colors.chipBackground, borderColor: colors.chipBorder },
-                selectedCategory === cat && !ordenarPorProximidade && styles.filterChipActive,
-              ]}
-              onPress={() => setSelectedCategory(cat)}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  { color: colors.chipText },
-                  selectedCategory === cat && !ordenarPorProximidade && styles.filterChipTextActive,
-                ]}
-              >
-                {cat}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Lista */}
-      <FlatList
-        data={processados}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderItem}
+      <ScrollView
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+        }}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.textPrimary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#fff"
+          />
         }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="alert-circle-outline" size={48} color={colors.textSecondary} style={{ marginBottom: 10 }} />
-            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{t('noResults', 'Nenhum local encontrado.')}</Text>
+      >
+        <ImageBackground
+          source={{
+            uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=800&auto=format&fit=crop',
+          }}
+          style={styles.topHeroBanner}
+        >
+          <View style={styles.heroOverlayDark}>
+            <View style={styles.searchContainerFloating}>
+              <Ionicons
+                name="search"
+                size={18}
+                color="#666"
+                style={{ marginRight: 8 }}
+              />
+
+              <TextInput
+                style={styles.searchInputFloating}
+                placeholder={t(
+                  'searchPlaceholder',
+                  'Pesquisar locais...'
+                )}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#888"
+              />
+
+              <Ionicons
+                name="options-outline"
+                size={18}
+                color="#666"
+              />
+            </View>
+
+            <View style={styles.heroTextContainer}>
+              <Text style={styles.heroTitleText}>
+                Descubra Novos{'\n'}Lugares Incríveis
+              </Text>
+
+              <Text style={styles.heroSubText}>
+                Explore as melhores atrações e recantos de Riozinho
+              </Text>
+            </View>
           </View>
-        }
-      />
+        </ImageBackground>
+
+        <View
+          style={[
+            styles.sheetContentContainer,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <View
+            pointerEvents="none"
+            style={styles.sheetGlow}
+          />
+
+          {isOffline && (
+            <View style={styles.offlineBanner}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={16}
+                color="#fff"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.offlineText}>
+                Modo Offline: exibindo informações salvas.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: colors.textPrimary },
+              ]}
+            >
+              Categorias Populares
+            </Text>
+          </View>
+
+          <View style={styles.filterWrapper}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterContainer}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: colors.chipBackground,
+                    borderColor: colors.chipBorder,
+                  },
+                  ordenarPorProximidade && styles.filterChipActive,
+                ]}
+                onPress={() =>
+                  setOrdenarPorProximidade(!ordenarPorProximidade)
+                }
+              >
+                <Ionicons
+                  name="navigate"
+                  size={14}
+                  color={
+                    ordenarPorProximidade
+                      ? '#fff'
+                      : colors.textSecondary
+                  }
+                  style={{ marginRight: 4 }}
+                />
+
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    { color: colors.chipText },
+                    ordenarPorProximidade &&
+                      styles.filterChipTextActive,
+                  ]}
+                >
+                  Mais Próximos
+                </Text>
+              </TouchableOpacity>
+
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: colors.chipBackground,
+                      borderColor: colors.chipBorder,
+                    },
+                    selectedCategory === cat &&
+                      !ordenarPorProximidade &&
+                      styles.filterChipActive,
+                  ]}
+                  onPress={() => setSelectedCategory(cat)}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: colors.chipText },
+                      selectedCategory === cat &&
+                        !ordenarPorProximidade &&
+                        styles.filterChipTextActive,
+                    ]}
+                  >
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.sectionHeaderRow}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: colors.textPrimary },
+              ]}
+            >
+              {searchQuery !== ''
+                ? 'Resultados da Pesquisa'
+                : 'Recomendados para você'}
+            </Text>
+          </View>
+
+          {processados.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons
+                name="alert-circle-outline"
+                size={48}
+                color={colors.textSecondary}
+                style={{ marginBottom: 10 }}
+              />
+
+              <Text
+                style={[
+                  styles.emptyText,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Nenhum local encontrado.
+              </Text>
+            </View>
+          ) : (
+            processados.map((item) => renderCardTravelStyle(item))
+          )}
+
+          <View style={{ height: 100 }} />
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
+  mainWrapper: {
+    flex: 1,
+  },
+  topHeroBanner: {
+    width: '100%',
+    height: 270,
+    justifyContent: 'flex-start',
+  },
+  heroOverlayDark: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  searchContainerFloating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 6,
+    width: '88%',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  searchInputFloating: {
+    flex: 1,
+    fontSize: 14,
+    color: '#333',
+    padding: 0,
+  },
+  heroTextContainer: {
+    marginTop: 24,
+    width: '100%',
+  },
+  heroTitleText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    lineHeight: 30,
+  },
+  heroSubText: {
+    fontSize: 13,
+    color: '#e0e0e0',
+    marginTop: 6,
+  },
+  sheetContentContainer: {
+    flex: 1,
+    marginTop: -28,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 18,
+    paddingTop: 24,
+    borderTopWidth: 0,
+    elevation: 8,
+    shadowColor: '#ffffff',
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  sheetGlow: {
+    position: 'absolute',
+    top: -7,
+    left: 5,
+    right: 5,
+    height: 24,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.015)',
+    shadowColor: '#ffffff',
+    shadowOffset: {
+      width: 0,
+      height: -3,
+    },
+    shadowOpacity: 0.28,
+    shadowRadius: 9,
+    elevation: 3,
+    zIndex: 1,
+  },
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,83 +653,138 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
   },
-  offlineText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  weatherWidget: {
+  offlineText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
     marginBottom: 12,
+    marginTop: 4,
   },
-  weatherInfoLeft: { flexDirection: 'row', alignItems: 'center' },
-  weatherCity: { fontSize: 14, fontWeight: 'bold' },
-  weatherDesc: { fontSize: 12 },
-  weatherInfoRight: { alignItems: 'flex-end' },
-  weatherTemp: { fontSize: 20, fontWeight: 'bold' },
-  weatherMinMax: { fontSize: 11, marginTop: 2 },
-  searchContainer: {
-    flexDirection: 'row',
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  filterWrapper: {
+    height: 42,
+    marginBottom: 16,
+  },
+  filterContainer: {
     alignItems: 'center',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    marginBottom: 15,
-    borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 16, padding: 0 },
-  searchIcon: { marginLeft: 10 },
-  filterWrapper: { height: 45, marginBottom: 15 },
-  filterContainer: { alignItems: 'center' },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 10,
+    marginRight: 8,
     borderWidth: 1,
   },
-  filterChipActive: { backgroundColor: '#0066cc', borderColor: '#0066cc' },
-  filterChipText: { fontSize: 14, fontWeight: '600' },
-  filterChipTextActive: { color: '#fff' },
-  card: {
+  filterChipActive: {
+    backgroundColor: '#0066cc',
+    borderColor: '#0066cc',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: '#fff',
+  },
+  // 🔹 CARTÃO PLANO (SEM SOMBRA, SEM ELEVAÇÃO - ESTILO TRAVELPAL)
+  travelCard: {
     width: '100%',
-    height: 180,
-    marginBottom: 15,
-    borderRadius: 12,
+    borderRadius: 20,
+    marginBottom: 18,
     overflow: 'hidden',
-    borderWidth: 1,
+    elevation: 0,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
   },
-  cardImage: { width: '100%', height: '100%' },
-  cardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    padding: 15,
-    justifyContent: 'flex-end',
+  travelCardImageWrapper: {
+    width: '100%',
+    height: 160,
   },
-  cardHeaderRow: {
+  travelCardImage: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'space-between',
+    flexDirection: 'row',
+    padding: 12,
+  },
+  travelTypeBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  travelTypeBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  travelHeartButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  travelCardContent: {
+    paddingTop: 10,
+    paddingBottom: 12,
+    paddingHorizontal: 4, // Alinhado perfeitamente sem margem lateral forçada
+  },
+  travelCardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 4,
   },
-  cardNome: { fontSize: 18, fontWeight: 'bold', color: '#fff', flex: 1 },
-  distanceBadge: {
+  travelCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  travelDistanceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
     marginLeft: 8,
   },
-  distanceText: { color: '#fff', fontSize: 12, fontWeight: '600', marginLeft: 3 },
-  cardDescricao: { fontSize: 14, color: '#fff', lineHeight: 18 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyText: { fontSize: 16, textAlign: 'center' },
-  searchContainerSkeleton: { height: 45, borderRadius: 10, marginBottom: 15 },
-  cardSkeleton: { width: '100%', height: 180, borderRadius: 12, marginBottom: 15 },
+  travelDistanceText: {
+    fontSize: 12,
+    marginLeft: 2,
+  },
+  travelCardSub: {
+    fontSize: 13,
+  },
+  emptyContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  searchContainerSkeleton: {
+    height: 45,
+    borderRadius: 24,
+    marginBottom: 15,
+  },
+  cardSkeleton: {
+    width: '100%',
+    height: 180,
+    borderRadius: 24,
+    marginBottom: 15,
+  },
 });

@@ -13,6 +13,7 @@ import {
   Platform,
   ActionSheetIOS,
   Linking,
+  StatusBar,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'expo-image';
@@ -22,7 +23,6 @@ import { useThemeColors } from '../utils/ThemeContext';
 import { isAbertoAgora } from '../utils/ScheduleHelper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CONTENT_WIDTH = SCREEN_WIDTH - 40;
 
 const DIAS_SEMANA_LABELS = [
   { id: 'segunda', label: 'Segunda-feira' },
@@ -34,7 +34,7 @@ const DIAS_SEMANA_LABELS = [
   { id: 'domingo', label: 'Domingo' }
 ];
 
-export default function DetalhesScreen({ route }) {
+export default function DetalhesScreen({ route, navigation }) {
   const initialItem = route.params || {};
   const { id } = initialItem;
   
@@ -45,7 +45,7 @@ export default function DetalhesScreen({ route }) {
   const { t } = useTranslation();
   const { colors, isDark } = useThemeColors();
 
-  // Busca os dados completos e atualizados diretamente na API usando a rota dinâmica
+  // Busca os dados completos e atualizados diretamente na API
   useEffect(() => {
     async function fetchDetalhesCompletos() {
       if (!id) return;
@@ -54,8 +54,8 @@ export default function DetalhesScreen({ route }) {
         const tipoAtual = initialItem.tipo;
         if (tipoAtual) {
           const tLower = tipoAtual.toLowerCase();
-          if (tLower.includes('restaurante')) rotaTipo = 'restaurantes';
-          else if (tLower.includes('acomodacao') || tLower.includes('hotel')) rotaTipo = 'acomodacoes';
+          if (tLower.includes('restaurante') || tLower.includes('gastronomia')) rotaTipo = 'restaurantes';
+          else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
         }
 
         const url = `https://turismo-api-vv62.onrender.com/api/${rotaTipo}`;
@@ -78,7 +78,6 @@ export default function DetalhesScreen({ route }) {
 
   const { nome, descricao, endereco, horario, horarios, sempreAberto, imagem, imagens, tipo, latitude, longitude, coordenadas } = item;
 
-  // Tratamento e unificação robusta das coordenadas ("lat, lng" ou campos individuais)
   let lat = latitude;
   let lng = longitude;
   if (coordenadas && typeof coordenadas === 'string' && coordenadas.includes(',')) {
@@ -94,7 +93,6 @@ export default function DetalhesScreen({ route }) {
   const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLng);
   const imageList = Array.isArray(imagens) && imagens.length > 0 ? imagens : [imagem];
 
-  // Verifica se está aberto utilizando o objeto completo do item
   const estaAberto = isAbertoAgora(item);
 
   useEffect(() => {
@@ -125,7 +123,7 @@ export default function DetalhesScreen({ route }) {
   };
 
   const handleScroll = (event) => {
-    const slide = Math.round(event.nativeEvent.contentOffset.x / CONTENT_WIDTH);
+    const slide = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     if (slide !== activeIndex && slide >= 0 && slide < imageList.length) {
       setActiveIndex(slide);
     }
@@ -216,146 +214,178 @@ export default function DetalhesScreen({ route }) {
   const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ paddingBottom: 30 }}>
-      {/* Carrossel de imagens */}
-      <View style={[styles.carouselContainer, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-        <FlatList
-          ref={flatListRef}
-          data={imageList}
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(_, index) => index.toString()}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          renderItem={({ item: imgUri }) => (
-            <Image
-              source={{ uri: imgUri || '/placeholder.jpg' }}
-              style={styles.carouselImage}
-              contentFit="cover"
-              placeholder={require('../../assets/placeholder.jpg')}
-              cachePolicy="memory-disk"
-            />
-          )}
-        />
+    <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-        {/* Botão Favorito Flutuante */}
-        <TouchableOpacity style={[styles.floatingFavButton, { backgroundColor: isDark ? 'rgba(30, 30, 30, 0.9)' : 'rgba(255, 255, 255, 0.9)' }]} onPress={handleToggleFavorito}>
-          <Ionicons name={isFavorito ? 'heart' : 'heart-outline'} size={24} color={isFavorito ? '#ff3b30' : colors.textPrimary} />
-        </TouchableOpacity>
-
-        {/* Botão Partilhar Flutuante */}
-        <TouchableOpacity style={[styles.floatingShareButton, { backgroundColor: isDark ? 'rgba(30, 30, 30, 0.9)' : 'rgba(255, 255, 255, 0.9)' }]} onPress={handleShare}>
-          <Ionicons name="share-social-outline" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        {/* Setas de navegação */}
-        {imageList.length > 1 && activeIndex > 0 && (
-          <TouchableOpacity style={[styles.arrowButton, { left: 10 }]} onPress={() => scrollToIndex(activeIndex - 1)}>
-            <Ionicons name="chevron-back" size={22} color="#FFF" />
-          </TouchableOpacity>
-        )}
-        {imageList.length > 1 && activeIndex < imageList.length - 1 && (
-          <TouchableOpacity style={[styles.arrowButton, { right: 10 }]} onPress={() => scrollToIndex(activeIndex + 1)}>
-            <Ionicons name="chevron-forward" size={22} color="#FFF" />
-          </TouchableOpacity>
-        )}
-
-        {/* Indicadores (Dots) */}
-        {imageList.length > 1 && (
-          <View style={styles.paginationContainer}>
-            {imageList.map((_, idx) => (
-              <View
-                key={idx}
-                style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]}
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        
+        {/* CARROSSEL IMERSIVO NO TOPO */}
+        <View style={styles.carouselContainer}>
+          <FlatList
+            ref={flatListRef}
+            data={imageList}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(_, index) => index.toString()}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            renderItem={({ item: imgUri }) => (
+              <Image
+                source={{ uri: imgUri || '/placeholder.jpg' }}
+                style={styles.carouselImage}
+                contentFit="cover"
+                placeholder={require('../../assets/placeholder.jpg')}
+                cachePolicy="memory-disk"
               />
-            ))}
-          </View>
-        )}
-      </View>
+            )}
+          />
 
-      <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
+          {/* BOTÃO VOLTAR FLUTUANTE */}
+          <TouchableOpacity 
+            style={styles.floatingBackButton} 
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
 
-      <View style={[styles.infoBox, { backgroundColor: isDark ? '#1e1e1e' : '#e6f7ff', borderColor: colors.cardBorder }]}>
-        <Text style={styles.tipo}>📌 {tipo}</Text>
-      </View>
+          {/* BOTÕES DE AÇÃO FLUTUANTES (FAVORITO E COMPARTILHAR) */}
+          <View style={styles.floatingActionsRow}>
+            <TouchableOpacity 
+              style={styles.floatingActionButton} 
+              onPress={handleShare}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="share-social-outline" size={18} color="#fff" />
+            </TouchableOpacity>
 
-      <View style={styles.secao}>
-        <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description', 'Descrição')}</Text>
-        <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao}</Text>
-      </View>
-
-      {endereco && (
-        <View style={styles.secao}>
-          <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('address', 'Endereço')}</Text>
-          <Text style={[styles.texto, { color: colors.textSecondary }]}>{endereco}</Text>
-        </View>
-      )}
-
-      {/* Secção de Horários / Sempre Aberto com Badge de Status */}
-      <View style={styles.secao}>
-        <View style={styles.horarioHeaderRow}>
-          <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
-          <View style={[
-            styles.statusBadge, 
-            { 
-              backgroundColor: semAbertoBadgeBg(estaAberto),
-              borderColor: semAbertoBadgeBorder(estaAberto),
-            }
-          ]}>
-            <Text style={{ color: semAbertoBadgeColor(estaAberto), fontWeight: 'bold', fontSize: 12 }}>
-              {sempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
-            </Text>
-          </View>
-        </View>
-
-        {sempreAberto ? (
-          <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f0fdf4', borderColor: '#10b981' }]}>
-            <Ionicons name="time-outline" size={20} color="#10b981" />
-            <Text style={[styles.sempreAbertoText, { color: colors.textPrimary }]}>
-              Este local possui acesso livre a qualquer momento, sem restrição de horários.
-            </Text>
-          </View>
-        ) : hasHorariosObj ? (
-          <View style={styles.horariosListaContainer}>
-            {DIAS_SEMANA_LABELS.map((dia) => {
-              const info = horarios[dia.id];
-              if (!info) return null;
-              return (
-                <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-                  <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
-                  <Text style={styles.horarioHorasText}>
-                    {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        ) : (
-          <Text style={[styles.texto, { color: colors.textSecondary }]}>
-            {horario || 'Horário não especificado'}
-          </Text>
-        )}
-      </View>
-
-      {/* Cartão de Acesso ao Mapa com botão "Ver no mapa" */}
-      {hasValidCoords && (
-        <View style={[styles.mapContainer, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
-          <View style={styles.mapFallback}>
-            <Ionicons name="location" size={36} color="#10b981" style={{ marginBottom: 8 }} />
-            <Text style={[styles.mapFallbackTitle, { color: colors.textPrimary }]}>{nome}</Text>
-            <Text style={[styles.mapFallbackText, { color: colors.textSecondary }]}>{endereco || 'Ver localização exata no mapa'}</Text>
-            <TouchableOpacity style={styles.botaoMapaInterno} onPress={abrirNoMapa}>
-              <Text style={styles.botaoMapaTexto}>📍 {t('openInMaps', 'Ver no mapa')}</Text>
+            <TouchableOpacity 
+              style={styles.floatingActionButton} 
+              onPress={handleToggleFavorito}
+              activeOpacity={0.8}
+            >
+              <Ionicons 
+                name={isFavorito ? 'heart' : 'heart-outline'} 
+                size={18} 
+                color={isFavorito ? '#ff3b30' : '#fff'} 
+              />
             </TouchableOpacity>
           </View>
+
+          {/* SETAS DE NAVEGAÇÃO LATERAL (SE HOUVER MAIS DE 1 FOTO) */}
+          {imageList.length > 1 && activeIndex > 0 && (
+            <TouchableOpacity style={[styles.arrowButton, { left: 14 }]} onPress={() => scrollToIndex(activeIndex - 1)}>
+              <Ionicons name="chevron-back" size={20} color="#FFF" />
+            </TouchableOpacity>
+          )}
+          {imageList.length > 1 && activeIndex < imageList.length - 1 && (
+            <TouchableOpacity style={[styles.arrowButton, { right: 14 }]} onPress={() => scrollToIndex(activeIndex + 1)}>
+              <Ionicons name="chevron-forward" size={20} color="#FFF" />
+            </TouchableOpacity>
+          )}
+
+          {/* INDICADORES (DOTS) */}
+          {imageList.length > 1 && (
+            <View style={styles.paginationContainer}>
+              {imageList.map((_, idx) => (
+                <View
+                  key={idx}
+                  style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]}
+                />
+              ))}
+            </View>
+          )}
         </View>
-      )}
-    </ScrollView>
+
+        {/* PAINEL DE CONTEÚDO PRINCIPAL (ESTILO SHEET SOBREPOSTO) */}
+        <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
+          
+          {/* TÍTULO E BADGE DE CATEGORIA */}
+          <View style={styles.headerTitleRow}>
+            <View style={styles.typeBadge}>
+              <Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text>
+            </View>
+
+            <View style={[
+              styles.statusBadge, 
+              { 
+                backgroundColor: semAbertoBadgeBg(estaAberto),
+                borderColor: semAbertoBadgeBorder(estaAberto),
+              }
+            ]}>
+              <Text style={{ color: semAbertoBadgeColor(estaAberto), fontWeight: 'bold', fontSize: 11 }}>
+                {sempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
+
+          {/* DESCRIÇÃO */}
+          <View style={styles.secao}>
+            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description', 'Descrição')}</Text>
+            <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao}</Text>
+          </View>
+
+          {/* ENDEREÇO */}
+          {endereco && (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('address', 'Endereço')}</Text>
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
+                <Text style={[styles.texto, { color: colors.textSecondary, flex: 1 }]}>{endereco}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* HORÁRIO DE FUNCIONAMENTO */}
+          <View style={styles.secao}>
+            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
+
+            {sempreAberto ? (
+              <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
+                <Ionicons name="time-outline" size={18} color="#10b981" />
+                <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
+                  Este local possui acesso livre a qualquer momento, sem restrição de horários.
+                </Text>
+              </View>
+            ) : hasHorariosObj ? (
+              <View style={styles.horariosListaContainer}>
+                {DIAS_SEMANA_LABELS.map((dia) => {
+                  const info = horarios[dia.id];
+                  if (!info) return null;
+                  return (
+                    <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground || (isDark ? '#1e1e1e' : '#f8fafc') }]}>
+                      <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
+                      <Text style={styles.horarioHorasText}>
+                        {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.texto, { color: colors.textSecondary }]}>
+                {horario || 'Horário não especificado'}
+              </Text>
+            )}
+          </View>
+
+          {/* BOTÃO MAPA */}
+          {hasValidCoords && (
+            <TouchableOpacity style={styles.botaoMapaEstilizado} onPress={abrirNoMapa} activeOpacity={0.85}>
+              <Ionicons name="map" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.botaoMapaTexto}>📍 {t('openInMaps', 'Ver rota no mapa')}</Text>
+            </TouchableOpacity>
+          )}
+
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
-// Funções auxiliares de cores atualizadas para o badge
 function semAbertoBadgeBg(estaAberto) {
   return estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)';
 }
@@ -367,121 +397,135 @@ function semAbertoBadgeColor(estaAberto) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20 },
+  mainWrapper: { flex: 1 },
   carouselContainer: {
-    width: CONTENT_WIDTH,
-    height: 250,
-    marginBottom: 15,
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 1,
+    width: SCREEN_WIDTH,
+    height: 310,
     position: 'relative',
   },
-  carouselImage: { width: CONTENT_WIDTH, height: 250 },
-  floatingFavButton: {
+  carouselImage: { width: SCREEN_WIDTH, height: 310 },
+  floatingBackButton: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    borderRadius: 20,
-    padding: 8,
-    zIndex: 10,
-    elevation: 4,
-  },
-  floatingShareButton: {
-    position: 'absolute',
-    top: 12,
-    right: 60,
-    borderRadius: 20,
-    padding: 8,
-    zIndex: 10,
-    elevation: 4,
-  },
-  titulo: { fontSize: 26, fontWeight: 'bold', marginBottom: 10 },
-  tipo: { fontSize: 16, color: '#10b981', fontWeight: '600' },
-  infoBox: {
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 20,
-    borderWidth: 1,
-  },
-  secao: { marginBottom: 15 },
-  secaoTitulo: { fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
-  horarioHeaderRow: {
-    flexDirection: 'row',
+    top: 48,
+    left: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
+  },
+  floatingActionsRow: {
+    position: 'absolute',
+    top: 48,
+    right: 20,
+    flexDirection: 'row',
+    gap: 10,
+    zIndex: 10,
+  },
+  floatingActionButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  arrowButton: {
+    position: 'absolute',
+    top: '45%',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 18,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  paginationContainer: {
+    position: 'absolute',
+    bottom: 35,
+    flexDirection: 'row',
+    alignSelf: 'center',
+    zIndex: 10,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3, marginHorizontal: 3 },
+  activeDot: { backgroundColor: '#FFF', width: 16 },
+  inactiveDot: { backgroundColor: 'rgba(255, 255, 255, 0.5)' },
+  sheetContentContainer: {
+    flex: 1,
+    marginTop: -28,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
+  typeBadge: {
+    backgroundColor: 'rgba(0, 102, 204, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  typeBadgeText: { color: '#0066cc', fontSize: 12, fontWeight: 'bold' },
   statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
   },
+  titulo: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, lineHeight: 30 },
+  secao: { marginBottom: 20 },
+  secaoTitulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  texto: { fontSize: 14, lineHeight: 20 },
   sempreAbertoBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1,
     gap: 10,
-    marginTop: 4,
   },
-  sempreAbertoText: {
-    fontSize: 14,
-    flex: 1,
-    lineHeight: 20,
-  },
-  horariosListaContainer: {
-    gap: 6,
-    marginTop: 4,
-  },
+  sempreAbertoText: { fontSize: 13, flex: 1, lineHeight: 18 },
+  horariosListaContainer: { gap: 8 },
   horarioRowItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
   },
-  horarioDiaLabel: { fontSize: 14, fontWeight: '600' },
-  horarioHorasText: { fontSize: 14, color: '#10b981', fontWeight: '500' },
-  texto: { fontSize: 16, lineHeight: 22 },
-  mapContainer: {
-    height: 200,
-    width: '100%',
-    marginBottom: 20,
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
-  mapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  mapFallbackTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4, textAlign: 'center' },
-  mapFallbackText: { fontSize: 14, marginBottom: 15, textAlign: 'center' },
-  botaoMapaInterno: {
-    backgroundColor: '#10b981',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  horarioDiaLabel: { fontSize: 13, fontWeight: '600' },
+  horarioHorasText: { fontSize: 13, color: '#10b981', fontWeight: '600' },
+  botaoMapaEstilizado: {
+    backgroundColor: '#0066cc',
+    paddingVertical: 14,
+    borderRadius: 24,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+    elevation: 4,
+    shadowColor: '#0066cc',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   botaoMapaTexto: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
-  arrowButton: {
-    position: 'absolute',
-    top: '42%',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 6,
-    zIndex: 10,
-  },
-  paginationContainer: {
-    position: 'absolute',
-    bottom: 10,
-    flexDirection: 'row',
-    alignSelf: 'center',
-    zIndex: 10,
-  },
-  dot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 4 },
-  activeDot: { backgroundColor: '#FFF', width: 14 },
-  inactiveDot: { backgroundColor: 'rgba(255, 255, 255, 0.5)' },
 });
