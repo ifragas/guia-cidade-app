@@ -34,6 +34,19 @@ const DIAS_SEMANA_LABELS = [
   { id: 'domingo', label: 'Domingo' }
 ];
 
+// Função para mascarar o telefone no padrão brasileiro: (51) 99902-5580 ou (51) 3333-3333
+const formatarTelefoneBR = (numero) => {
+  if (!numero) return '';
+  const cleaned = String(numero).replace(/\D/g, '');
+  
+  if (cleaned.length === 11) {
+    return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
+  } else if (cleaned.length === 10) {
+    return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
+  }
+  return cleaned;
+};
+
 export default function DetalhesScreen({ route, navigation }) {
   const initialItem = route.params || {};
   const { id } = initialItem;
@@ -45,7 +58,6 @@ export default function DetalhesScreen({ route, navigation }) {
   const { t } = useTranslation();
   const { colors, isDark } = useThemeColors();
 
-  // Busca os dados completos e atualizados diretamente na API
   useEffect(() => {
     async function fetchDetalhesCompletos() {
       if (!id) return;
@@ -76,7 +88,23 @@ export default function DetalhesScreen({ route, navigation }) {
     fetchDetalhesCompletos();
   }, [id]);
 
-  const { nome, descricao, endereco, horario, horarios, sempreAberto, imagem, imagens, tipo, latitude, longitude, coordenadas } = item;
+  const {
+    nome,
+    descricao,
+    endereco,
+    horario,
+    horarios,
+    sempreAberto,
+    whatsapp,
+    redesSociais,
+    linkExterno,
+    imagem,
+    imagens,
+    tipo,
+    latitude,
+    longitude,
+    coordenadas
+  } = item;
 
   let lat = latitude;
   let lng = longitude;
@@ -94,6 +122,10 @@ export default function DetalhesScreen({ route, navigation }) {
   const imageList = Array.isArray(imagens) && imagens.length > 0 ? imagens : [imagem];
 
   const estaAberto = isAbertoAgora(item);
+
+  const whatsappList = Array.isArray(whatsapp)
+    ? whatsapp.filter(Boolean)
+    : (typeof whatsapp === 'string' && whatsapp.trim() ? [whatsapp] : []);
 
   useEffect(() => {
     async function checkFavorito() {
@@ -133,6 +165,47 @@ export default function DetalhesScreen({ route, navigation }) {
     if (index >= 0 && index < imageList.length) {
       flatListRef.current?.scrollToIndex({ index, animated: true });
       setActiveIndex(index);
+    }
+  };
+
+  const abrirWhatsapp = async (numero) => {
+    const cleanNum = String(numero).replace(/\D/g, '');
+    const url = `https://wa.me/55${cleanNum}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o WhatsApp neste dispositivo.');
+      }
+    } catch (err) {
+      Alert.alert(t('error', 'Erro'), 'Erro ao abrir WhatsApp.');
+    }
+  };
+
+  const abrirLinkExterno = async (urlLink) => {
+    if (!urlLink) return;
+    let targetUrl = urlLink.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://${targetUrl}`;
+    }
+    try {
+      await Linking.openURL(targetUrl);
+    } catch (err) {
+      Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link externo.');
+    }
+  };
+
+  const abrirRedeSocial = async (url) => {
+    if (!url) return;
+    let targetUrl = url.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      targetUrl = `https://${targetUrl}`;
+    }
+    try {
+      await Linking.openURL(targetUrl);
+    } catch (err) {
+      Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link.');
     }
   };
 
@@ -212,6 +285,7 @@ export default function DetalhesScreen({ route, navigation }) {
   };
 
   const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
+  const hasRedesSociais = redesSociais && (redesSociais.instagram || redesSociais.facebook || redesSociais.tiktok);
 
   return (
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
@@ -321,6 +395,85 @@ export default function DetalhesScreen({ route, navigation }) {
           </View>
 
           <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
+
+          {/* LINK EXTERNO / CARDÁPIO DIGITAL (ESTILO INTEGRADO AO TEMA) */}
+          {linkExterno && String(linkExterno).trim() !== '' ? (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Link Externo / Cardápio</Text>
+              <TouchableOpacity 
+                style={[styles.infoRowLink, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', borderColor: colors.border }]} 
+                onPress={() => abrirLinkExterno(linkExterno)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="globe-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
+                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]} numberOfLines={1}>
+                  {linkExterno}
+                </Text>
+                <Ionicons name="open-outline" size={16} color="#10b981" style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {/* CONTATO WHATSAPP COM MÁSCARA */}
+          {whatsappList.length > 0 && (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>WhatsApp</Text>
+              <View style={styles.whatsappContainer}>
+                {whatsappList.map((num, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.btnWhatsapp}
+                    onPress={() => abrirWhatsapp(num)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+                    <Text style={styles.btnWhatsappText}>{formatarTelefoneBR(num)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* REDES SOCIAIS */}
+          {hasRedesSociais && (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Redes Sociais</Text>
+              <View style={styles.redesContainer}>
+                {redesSociais.instagram ? (
+                  <TouchableOpacity
+                    style={[styles.btnRedeSocial, { backgroundColor: '#e1306c' }]}
+                    onPress={() => abrirRedeSocial(redesSociais.instagram)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="logo-instagram" size={18} color="#fff" />
+                    <Text style={styles.btnRedeText}>Instagram</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {redesSociais.facebook ? (
+                  <TouchableOpacity
+                    style={[styles.btnRedeSocial, { backgroundColor: '#1877f2' }]}
+                    onPress={() => abrirRedeSocial(redesSociais.facebook)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="logo-facebook" size={18} color="#fff" />
+                    <Text style={styles.btnRedeText}>Facebook</Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {redesSociais.tiktok ? (
+                  <TouchableOpacity
+                    style={[styles.btnRedeSocial, { backgroundColor: '#000000' }]}
+                    onPress={() => abrirRedeSocial(redesSociais.tiktok)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="logo-tiktok" size={18} color="#fff" />
+                    <Text style={styles.btnRedeText}>TikTok</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          )}
 
           {/* DESCRIÇÃO */}
           <View style={styles.secao}>
@@ -487,12 +640,58 @@ const styles = StyleSheet.create({
   },
   titulo: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, lineHeight: 30 },
   secao: { marginBottom: 20 },
-  secaoTitulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
+  secaoTitulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  infoRowLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  textoLink: { fontSize: 13, fontWeight: '600' },
   texto: { fontSize: 14, lineHeight: 20 },
+  whatsappContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  btnWhatsapp: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#25D366',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    gap: 6,
+  },
+  btnWhatsappText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  redesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  btnRedeSocial: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
+    gap: 6,
+  },
+  btnRedeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
   sempreAbertoBox: {
     flexDirection: 'row',
     alignItems: 'center',
