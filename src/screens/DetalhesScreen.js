@@ -291,7 +291,7 @@ export default function DetalhesScreen({ route, navigation }) {
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 5 }}>
         
         {/* CARROSSEL IMERSIVO NO TOPO */}
         <View style={styles.carouselContainer}>
@@ -719,7 +719,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 10,
-    marginBottom: 20,
+    marginBottom: 100,
     elevation: 4,
     shadowColor: '#0066cc',
     shadowOpacity: 0.3,
