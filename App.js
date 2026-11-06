@@ -1,11 +1,16 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Image,
+} from 'react-native';
+
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { StyleSheet, View } from 'react-native';
 
 import HomeScreen from './src/screens/HomeScreen';
 import RestaurantesScreen from './src/screens/RestaurantesScreen';
@@ -63,7 +68,32 @@ export default function App() {
   const { ready } = useTranslation();
   const { isDark } = useThemeColors();
 
-  if (!ready) return null;
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Exibe a identidade visual por 2,5 segundos
+  // depois que as traduções estiverem carregadas.
+  useEffect(() => {
+    if (!ready) return;
+
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [ready]);
+
+  // Tela de abertura personalizada
+  if (!ready || showSplash) {
+    return (
+      <View style={styles.splashContainer}>
+        <Image
+          source={require('./assets/splash.png')}
+          style={styles.splashImage}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
@@ -115,35 +145,42 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  
-tabBar: {
-  position: 'absolute',
-  bottom: 24,
 
-  left: 0,
-  right: 0,
-  width: '88%',
-  marginHorizontal: '6%',
-
-  height: 66,
-  borderRadius: 33,
-  backgroundColor: '#161616',
-  borderTopWidth: 0,
-
-  paddingHorizontal: 6,
-  paddingTop: 0,
-  paddingBottom: 0,
-
-  elevation: 18,
-  shadowColor: '#000000',
-  shadowOpacity: 0.40,
-  shadowRadius: 14,
-  shadowOffset: {
-    width: 0,
-    height: 7,
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#EAF8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-},
 
+  splashImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  tabBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    width: '88%',
+    marginHorizontal: '6%',
+    height: 66,
+    borderRadius: 33,
+    backgroundColor: '#161616',
+    borderTopWidth: 0,
+    paddingHorizontal: 6,
+    paddingTop: 0,
+    paddingBottom: 0,
+    elevation: 18,
+    shadowColor: '#000000',
+    shadowOpacity: 0.40,
+    shadowRadius: 14,
+    shadowOffset: {
+      width: 0,
+      height: 7,
+    },
+  },
 
   tabBarItem: {
     flex: 1,

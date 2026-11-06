@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   Alert,
   RefreshControl,
@@ -20,8 +19,10 @@ import { calcularDistancia } from '../utils/LocationHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { salvarCache, obterCache } from '../utils/CacheHelper';
 import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
+import api from '../services/api';
+import TravelCard from '../components/TravelCard';
+import TravelCardSkeleton from '../components/TravelCardSkeleton';
 
-const API_URL = 'https://turismo-api-vv62.onrender.com/api/acomodacoes';
 const CACHE_KEY = 'acomodacoes_v2';
 
 export default function AcomodacoesScreen({ navigation }) {
@@ -58,9 +59,7 @@ export default function AcomodacoesScreen({ navigation }) {
 
   const fetchItems = async () => {
     try {
-      const response = await fetch(API_URL);
-      if (!response.ok) throw new Error('Erro na API');
-      const data = await response.json();
+      const data = await api.get('/acomodacoes');
       setItems(data);
       setIsOffline(false);
       await salvarCache(CACHE_KEY, data);
@@ -71,7 +70,7 @@ export default function AcomodacoesScreen({ navigation }) {
         setItems(dadosEmCache);
         setIsOffline(true);
       } else {
-        Alert.alert('Atenção', 'Não foi possível carregar as acomodações e não há dados offline salvas.');
+        Alert.alert('Atenção', 'Não foi possível carregar as acomodações e não há dados offline salvos.');
       }
     } finally {
       setLoading(false);
@@ -126,91 +125,12 @@ export default function AcomodacoesScreen({ navigation }) {
     }
   }
 
-  const renderItem = ({ item }) => {
-    const isFavorito = favoritosIds.includes(item.id);
-    const distanciaKm = userLocation && item.latitude && item.longitude 
-      ? calcularDistancia(userLocation.latitude, userLocation.longitude, parseFloat(item.latitude), parseFloat(item.longitude))
-      : null;
-
-    const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1566073771259-6a8506099945';
-
-    return (
-      <TouchableOpacity
-        style={[styles.travelCard, { backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }]}
-        activeOpacity={0.9}
-        onPress={() =>
-          navigation.navigate('Detalhes', {
-            id: item.id,
-            nome: item.nome,
-            descricao: item.descricao,
-            endereco: item.endereco,
-            horario: item.horario,
-            imagem: imagemCap,
-            imagens: item.imagens || [imagemCap],
-            tipo: 'Hospedagem',
-            latitude: item.latitude,
-            longitude: item.longitude,
-          })
-        }
-      >
-        <View style={styles.travelCardImageWrapper}>
-          <ImageBackground
-            source={{ uri: imagemCap }}
-            style={styles.travelCardImage}
-            imageStyle={{ borderRadius: 20 }}
-            contentFit="cover"
-            placeholder={require('../../assets/placeholder.jpg')}
-            cachePolicy="memory-disk"
-          >
-            <View style={styles.badgeRowContainer}>
-              <View style={styles.travelTypeBadge}>
-                <Text style={styles.travelTypeBadgeText}>Hospedagem</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.travelHeartButton}
-              onPress={(e) => handleToggleFavorito(item.id, e)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isFavorito ? 'heart' : 'heart-outline'}
-                size={18}
-                color={isFavorito ? '#ff3b30' : '#333'}
-              />
-            </TouchableOpacity>
-          </ImageBackground>
-        </View>
-
-        <View style={styles.travelCardContent}>
-          <View style={styles.travelCardHeaderRow}>
-            <Text style={[styles.travelCardTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-              {item.nome}
-            </Text>
-            {distanciaKm && (
-              <View style={styles.travelDistanceRow}>
-                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                <Text style={[styles.travelDistanceText, { color: colors.textSecondary }]}>
-                  {distanciaKm} km
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Text style={[styles.travelCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-            {item.endereco || 'Riozinho, RS'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
   if (loading) {
     return (
-      <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
-        <View style={[styles.searchContainerSkeleton, { backgroundColor: colors.skeleton }]} />
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <TravelCardSkeleton />
+        <TravelCardSkeleton />
+        <TravelCardSkeleton />
       </View>
     );
   }
@@ -226,7 +146,6 @@ export default function AcomodacoesScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />
         }
       >
-        {/* BANNER IMERSIVO DE TOPO */}
         <ImageBackground
           source={{
             uri: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=800&auto=format&fit=crop',
@@ -266,7 +185,6 @@ export default function AcomodacoesScreen({ navigation }) {
           </View>
         </ImageBackground>
 
-        {/* PAINEL PRINCIPAL (BOTTOM SHEET) */}
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
           <View pointerEvents="none" style={styles.sheetGlow} />
 
@@ -277,7 +195,6 @@ export default function AcomodacoesScreen({ navigation }) {
             </View>
           )}
 
-          {/* FILTROS / CHIPS */}
           <View style={styles.filterWrapper}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterContainer}>
               <TouchableOpacity
@@ -313,11 +230,35 @@ export default function AcomodacoesScreen({ navigation }) {
               <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{t('noResults', 'Nenhuma acomodação encontrada.')}</Text>
             </View>
           ) : (
-            processados.map((item) => (
-              <React.Fragment key={item.id.toString()}>
-                {renderItem({ item })}
-              </React.Fragment>
-            ))
+            processados.map((item) => {
+              const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1566073771259-6a8506099945';
+
+              return (
+                <TravelCard
+                  key={item.id.toString()}
+                  item={item}
+                  isDark={isDark}
+                  isFavorito={favoritosIds.includes(item.id)}
+                  userLocation={userLocation}
+                  badgeType="Hospedagem"
+                  onPress={() =>
+                    navigation.navigate('Detalhes', {
+                      id: item.id,
+                      nome: item.nome,
+                      descricao: item.descricao,
+                      endereco: item.endereco,
+                      horario: item.horario,
+                      imagem: imagemCap,
+                      imagens: item.imagens || [imagemCap],
+                      tipo: 'Hospedagem',
+                      latitude: item.latitude,
+                      longitude: item.longitude,
+                    })
+                  }
+                  onToggleFavorito={(e) => handleToggleFavorito(item.id, e)}
+                />
+              );
+            })
           )}
 
           <View style={{ height: 100 }} />
@@ -329,6 +270,11 @@ export default function AcomodacoesScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   mainWrapper: { flex: 1 },
+  loadingContainer: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 18,
+  },
   topHeroBanner: {
     width: '100%',
     height: 270,
@@ -439,62 +385,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sectionTitle: { fontSize: 17, fontWeight: 'bold' },
-  travelCard: {
-    width: '100%',
-    marginBottom: 18,
-    backgroundColor: 'transparent',
-  },
-  travelCardImageWrapper: {
-    width: '100%',
-    height: 165,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  travelCardImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'space-between',
-    flexDirection: 'row',
-    padding: 12,
-  },
-  badgeRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  travelTypeBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  travelTypeBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  travelHeartButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  travelCardContent: {
-    paddingTop: 8,
-    paddingHorizontal: 2,
-  },
-  travelCardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  travelCardTitle: { fontSize: 16, fontWeight: 'bold', flex: 1 },
-  travelDistanceRow: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
-  travelDistanceText: { fontSize: 12, marginLeft: 2 },
-  travelCardSub: { fontSize: 13 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyText: { fontSize: 15, textAlign: 'center' },
-  searchContainerSkeleton: { height: 45, borderRadius: 24, marginBottom: 15 },
-  cardSkeleton: { width: '100%', height: 180, borderRadius: 20, marginBottom: 15 },
 });

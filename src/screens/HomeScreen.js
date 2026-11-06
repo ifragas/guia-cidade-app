@@ -4,12 +4,12 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Alert,
   RefreshControl,
   TextInput,
   ScrollView,
   StatusBar,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -18,14 +18,10 @@ import * as Location from 'expo-location';
 import { calcularDistancia } from '../utils/LocationHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { salvarCache, obterCache } from '../utils/CacheHelper';
-import { obterClimaRiozinho } from '../services/WeatherService';
 import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
-
-const ENDPOINTS = {
-  turismo: 'https://turismo-api-vv62.onrender.com/api/pontos-turisticos',
-  restaurantes: 'https://turismo-api-vv62.onrender.com/api/restaurantes',
-  acomodacoes: 'https://turismo-api-vv62.onrender.com/api/acomodacoes',
-};
+import api from '../services/api';
+import TravelCard from '../components/TravelCard';
+import TravelCardSkeleton from '../components/TravelCardSkeleton';
 
 const CACHE_KEY = 'global_discover_data_v12';
 
@@ -66,9 +62,9 @@ export default function HomeScreen({ navigation }) {
     try {
       const [resTurismo, resRestaurantes, resAcomodacoes] =
         await Promise.allSettled([
-          fetch(ENDPOINTS.turismo).then((res) => (res.ok ? res.json() : [])),
-          fetch(ENDPOINTS.restaurantes).then((res) => (res.ok ? res.json() : [])),
-          fetch(ENDPOINTS.acomodacoes).then((res) => (res.ok ? res.json() : [])),
+          api.get('/pontos-turisticos'),
+          api.get('/restaurantes'),
+          api.get('/acomodacoes'),
         ]);
 
       const turismoData = (
@@ -220,120 +216,17 @@ export default function HomeScreen({ navigation }) {
     });
   };
 
-  const renderCardTravelStyle = (item) => {
-    const isFavorito = favoritosIds.includes(item.id);
-
-    const lat = parseFloat(item.latitude);
-    const lng = parseFloat(item.longitude);
-
-    const distanciaKm =
-      userLocation && !isNaN(lat) && !isNaN(lng)
-        ? calcularDistancia(
-            userLocation.latitude,
-            userLocation.longitude,
-            lat,
-            lng
-          )
-        : null;
-
-    const imagemCap =
-      item.imagem ||
-      item.imagens?.[0] ||
-      'https://images.unsplash.com/photo-1432821596592-e2c18b78144f';
-
-    return (
-      <TouchableOpacity
-        key={`${item.categoriaPai}-${item.id}`}
-        activeOpacity={0.9}
-        style={[
-          styles.travelCard,
-          { backgroundColor: isDark ? '#1e1e1e' : '#ffffff' },
-        ]}
-        onPress={() => navegarParaDetalhes(item)}
-      >
-        {/* Imagem Superior de Ponta a Ponta */}
-        <View style={styles.travelCardImageWrapper}>
-          <ImageBackground
-            source={{ uri: imagemCap }}
-            style={styles.travelCardImage}
-            contentFit="cover"
-            placeholder={require('../../assets/placeholder.jpg')}
-            cachePolicy="memory-disk"
-          >
-            <View style={styles.travelTypeBadge}>
-              <Text style={styles.travelTypeBadgeText}>{item.tipoBadge}</Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.travelHeartButton}
-              onPress={(e) => handleToggleFavorito(item.id, e)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isFavorito ? 'heart' : 'heart-outline'}
-                size={18}
-                color={isFavorito ? '#ff3b30' : '#333'}
-              />
-            </TouchableOpacity>
-          </ImageBackground>
-        </View>
-
-        {/* Informações na Parte Inferior */}
-        <View style={styles.travelCardContent}>
-          <View style={styles.travelCardHeaderRow}>
-            <Text
-              style={[
-                styles.travelCardTitle,
-                { color: colors.textPrimary },
-              ]}
-              numberOfLines={1}
-            >
-              {item.nome}
-            </Text>
-            {distanciaKm && (
-              <View style={styles.travelDistanceRow}>
-                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                <Text style={[styles.travelDistanceText, { color: colors.textSecondary }]}>
-                  {distanciaKm} km
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Text
-            style={[
-              styles.travelCardSub,
-              { color: colors.textSecondary },
-            ]}
-            numberOfLines={1}
-          >
-            {item.endereco || item.descricao || 'Riozinho, RS'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
   if (loading) {
     return (
       <View
         style={[
-          styles.container,
+          styles.loadingContainer,
           { backgroundColor: colors.background },
         ]}
       >
-        <View
-          style={[
-            styles.searchContainerSkeleton,
-            { backgroundColor: colors.skeleton },
-          ]}
-        />
-        <View
-          style={[
-            styles.cardSkeleton,
-            { backgroundColor: colors.skeleton },
-          ]}
-        />
+        <TravelCardSkeleton />
+        <TravelCardSkeleton />
+        <TravelCardSkeleton />
       </View>
     );
   }
@@ -546,7 +439,18 @@ export default function HomeScreen({ navigation }) {
               </Text>
             </View>
           ) : (
-            processados.map((item) => renderCardTravelStyle(item))
+            processados.map((item) => (
+              <TravelCard
+                key={`${item.categoriaPai}-${item.id}`}
+                item={item}
+                isDark={isDark}
+                isFavorito={favoritosIds.includes(item.id)}
+                userLocation={userLocation}
+                badgeType={item.tipoBadge}
+                onPress={() => navegarParaDetalhes(item)}
+                onToggleFavorito={(e) => handleToggleFavorito(item.id, e)}
+              />
+            ))
           )}
 
           <View style={{ height: 100 }} />
@@ -559,6 +463,11 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   mainWrapper: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 18,
   },
   topHeroBanner: {
     width: '100%',
@@ -696,77 +605,6 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: '#fff',
   },
-  // 🔹 CARTÃO PLANO (SEM SOMBRA, SEM ELEVAÇÃO - ESTILO TRAVELPAL)
-  travelCard: {
-    width: '100%',
-    borderRadius: 20,
-    marginBottom: 18,
-    overflow: 'hidden',
-    elevation: 0,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  travelCardImageWrapper: {
-    width: '100%',
-    height: 160,
-  },
-  travelCardImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'space-between',
-    flexDirection: 'row',
-    padding: 12,
-  },
-  travelTypeBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
-  },
-  travelTypeBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  travelHeartButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  travelCardContent: {
-    paddingTop: 10,
-    paddingBottom: 12,
-    paddingHorizontal: 4, // Alinhado perfeitamente sem margem lateral forçada
-  },
-  travelCardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  travelCardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  travelDistanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  travelDistanceText: {
-    fontSize: 12,
-    marginLeft: 2,
-  },
-  travelCardSub: {
-    fontSize: 13,
-  },
   emptyContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -775,16 +613,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 15,
     textAlign: 'center',
-  },
-  searchContainerSkeleton: {
-    height: 45,
-    borderRadius: 24,
-    marginBottom: 15,
-  },
-  cardSkeleton: {
-    width: '100%',
-    height: 180,
-    borderRadius: 24,
-    marginBottom: 15,
   },
 });

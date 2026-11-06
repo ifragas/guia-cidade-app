@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   RefreshControl,
   ScrollView,
@@ -19,11 +18,14 @@ import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 import { calcularDistancia } from '../utils/LocationHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { obterCache } from '../utils/CacheHelper';
+import api from '../services/api';
+import TravelCard from '../components/TravelCard';
+import TravelCardSkeleton from '../components/TravelCardSkeleton';
 
-const APIS = [
-  { url: 'https://turismo-api-vv62.onrender.com/api/pontos-turisticos', key: 'pontos_turisticos' },
-  { url: 'https://turismo-api-vv62.onrender.com/api/acomodacoes', key: 'acomodacoes' },
-  { url: 'https://turismo-api-vv62.onrender.com/api/restaurantes', key: 'restaurantes' },
+const ENDPOINTS = [
+  { endpoint: '/pontos-turisticos', key: 'pontos_turisticos' },
+  { endpoint: '/acomodacoes', key: 'acomodacoes' },
+  { endpoint: '/restaurantes', key: 'restaurantes' },
 ];
 
 export default function FavoritosScreen({ navigation }) {
@@ -69,16 +71,13 @@ export default function FavoritosScreen({ navigation }) {
 
       try {
         const responses = await Promise.all(
-          APIS.map(item => fetch(item.url).then(res => {
-            if (!res.ok) throw new Error('Erro API');
-            return res.json();
-          }))
+          ENDPOINTS.map(item => api.get(item.endpoint))
         );
         todosOsItens = responses.flat();
         setIsOffline(false);
       } catch (err) {
         console.log('Modo offline nos Favoritos. Carregando dados locais do cache...');
-        const caches = await Promise.all(APIS.map(item => obterCache(item.key)));
+        const caches = await Promise.all(ENDPOINTS.map(item => obterCache(item.key)));
         todosOsItens = caches.filter(c => c !== null).flat();
         setIsOffline(true);
       }
@@ -111,7 +110,6 @@ export default function FavoritosScreen({ navigation }) {
     if (!idItem) return;
     const atualizados = await toggleFavorito(idItem);
     setFavoritosIds(atualizados);
-    // Atualiza a lista filtrando o item removido instantaneamente
     setFavoritosList(prev => prev.filter(item => item.id !== idItem));
   };
 
@@ -133,90 +131,11 @@ export default function FavoritosScreen({ navigation }) {
     }
   }
 
-  const renderItem = ({ item }) => {
-    const isFavorito = favoritosIds.includes(item.id);
-    const distanciaKm = userLocation && item.latitude && item.longitude 
-      ? calcularDistancia(userLocation.latitude, userLocation.longitude, parseFloat(item.latitude), parseFloat(item.longitude))
-      : null;
-
-    const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb';
-
-    return (
-      <TouchableOpacity
-        style={[styles.travelCard, { backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }]}
-        activeOpacity={0.9}
-        onPress={() =>
-          navigation.navigate('Detalhes', {
-            id: item.id,
-            nome: item.nome,
-            descricao: item.descricao,
-            endereco: item.endereco,
-            horario: item.horario,
-            imagem: imagemCap,
-            imagens: item.imagens || [imagemCap],
-            tipo: 'Favorito',
-            latitude: item.latitude,
-            longitude: item.longitude,
-          })
-        }
-      >
-        <View style={styles.travelCardImageWrapper}>
-          <ImageBackground
-            source={{ uri: imagemCap }}
-            style={styles.travelCardImage}
-            imageStyle={{ borderRadius: 20 }}
-            contentFit="cover"
-            placeholder={require('../../assets/placeholder.jpg')}
-            cachePolicy="memory-disk"
-          >
-            <View style={styles.badgeRowContainer}>
-              <View style={styles.travelTypeBadge}>
-                <Text style={styles.travelTypeBadgeText}>Salvo</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.travelHeartButton}
-              onPress={(e) => handleToggleFavorito(item.id, e)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={isFavorito ? 'heart' : 'heart-outline'}
-                size={18}
-                color={isFavorito ? '#ff3b30' : '#333'}
-              />
-            </TouchableOpacity>
-          </ImageBackground>
-        </View>
-
-        <View style={styles.travelCardContent}>
-          <View style={styles.travelCardHeaderRow}>
-            <Text style={[styles.travelCardTitle, { color: colors.textPrimary }]} numberOfLines={1}>
-              {item.nome}
-            </Text>
-            {distanciaKm && (
-              <View style={styles.travelDistanceRow}>
-                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                <Text style={[styles.travelDistanceText, { color: colors.textSecondary }]}>
-                  {distanciaKm} km
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Text style={[styles.travelCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-            {item.endereco || 'Riozinho, RS'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
   if (loading && !refreshing) {
     return (
-      <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
-        <View style={[styles.cardSkeleton, { backgroundColor: colors.skeleton }]} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <TravelCardSkeleton />
+        <TravelCardSkeleton />
       </View>
     );
   }
@@ -232,7 +151,6 @@ export default function FavoritosScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />
         }
       >
-        {/* BANNER IMERSIVO DE TOPO */}
         <ImageBackground
           source={{
             uri: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=800&auto=format&fit=crop',
@@ -251,7 +169,6 @@ export default function FavoritosScreen({ navigation }) {
           </View>
         </ImageBackground>
 
-        {/* PAINEL PRINCIPAL (BOTTOM SHEET) */}
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
           <View pointerEvents="none" style={styles.sheetGlow} />
 
@@ -302,11 +219,35 @@ export default function FavoritosScreen({ navigation }) {
               </Text>
             </View>
           ) : (
-            processados.map((item) => (
-              <React.Fragment key={item.id.toString()}>
-                {renderItem({ item })}
-              </React.Fragment>
-            ))
+            processados.map((item) => {
+              const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb';
+
+              return (
+                <TravelCard
+                  key={item.id.toString()}
+                  item={item}
+                  isDark={isDark}
+                  isFavorito={favoritosIds.includes(item.id)}
+                  userLocation={userLocation}
+                  badgeType="Salvo"
+                  onPress={() =>
+                    navigation.navigate('Detalhes', {
+                      id: item.id,
+                      nome: item.nome,
+                      descricao: item.descricao,
+                      endereco: item.endereco,
+                      horario: item.horario,
+                      imagem: imagemCap,
+                      imagens: item.imagens || [imagemCap],
+                      tipo: 'Favorito',
+                      latitude: item.latitude,
+                      longitude: item.longitude,
+                    })
+                  }
+                  onToggleFavorito={(e) => handleToggleFavorito(item.id, e)}
+                />
+              );
+            })
           )}
 
           <View style={{ height: 100 }} />
@@ -318,6 +259,11 @@ export default function FavoritosScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   mainWrapper: { flex: 1 },
+  loadingContainer: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 18,
+  },
   topHeroBanner: {
     width: '100%',
     height: 240,
@@ -408,62 +354,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   sectionTitle: { fontSize: 17, fontWeight: 'bold' },
-  travelCard: {
-    width: '100%',
-    marginBottom: 18,
-    backgroundColor: 'transparent',
-  },
-  travelCardImageWrapper: {
-    width: '100%',
-    height: 165,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  travelCardImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'space-between',
-    flexDirection: 'row',
-    padding: 12,
-  },
-  badgeRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  travelTypeBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  travelTypeBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  travelHeartButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  travelCardContent: {
-    paddingTop: 8,
-    paddingHorizontal: 2,
-  },
-  travelCardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  travelCardTitle: { fontSize: 16, fontWeight: 'bold', flex: 1 },
-  travelDistanceRow: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
-  travelDistanceText: { fontSize: 12, marginLeft: 2 },
-  travelCardSub: { fontSize: 13 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, marginTop: 40 },
   emptyTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' },
   emptyText: { fontSize: 15, textAlign: 'center', lineHeight: 22 },
-  cardSkeleton: { width: '100%', height: 180, borderRadius: 20, marginBottom: 15 },
 });

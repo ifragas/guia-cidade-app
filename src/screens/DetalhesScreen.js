@@ -21,6 +21,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { isAbertoAgora } from '../utils/ScheduleHelper';
+import api from '../services/api'; // Importa o serviço unificado
+
+import OfflineMapCard from '../components/OfflineMapCard';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -54,6 +57,7 @@ export default function DetalhesScreen({ route, navigation }) {
   const [item, setItem] = useState(initialItem);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFavorito, setIsFavorito] = useState(false);
+  const [isMapInteracting, setIsMapInteracting] = useState(false);
   const flatListRef = useRef(null);
   const { t } = useTranslation();
   const { colors, isDark } = useThemeColors();
@@ -70,19 +74,16 @@ export default function DetalhesScreen({ route, navigation }) {
           else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
         }
 
-        const url = `https://turismo-api-vv62.onrender.com/api/${rotaTipo}`;
-        const response = await fetch(url);
-        const textResponse = await response.text();
-
-        if (textResponse.trim().startsWith('[')) {
-          const lista = JSON.parse(textResponse);
+        // Utiliza o serviço unificado api.get
+        const lista = await api.get(`/${rotaTipo}`);
+        if (Array.isArray(lista)) {
           const itemAtualizado = lista.find(el => el.id === id);
           if (itemAtualizado) {
             setItem(prev => ({ ...prev, ...itemAtualizado }));
           }
         }
       } catch (error) {
-        console.log('Erro ao buscar detalhes completos da API:', error);
+        console.log('Erro ao buscar detalhes completos da API:', error.message);
       }
     }
     fetchDetalhesCompletos();
@@ -291,7 +292,16 @@ export default function DetalhesScreen({ route, navigation }) {
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 5 }}>
+      <ScrollView style={{ flex: 1 }} 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{ paddingBottom: 5 }}
+        scrollEnabled={!isMapInteracting}
+        nestedScrollEnabled={true} // NOVO: Essencial para Android
+        overScrollMode="never" // NOVO: Remove efeito de overscroll no Android
+        bounces={false} // NOVO: Remove bounce no iOS
+        scrollEventThrottle={16} // Atualiza eventos de scroll mais rapidamente
+        removeClippedSubviews={true} // Otimiza performance
+      >
         
         {/* CARROSSEL IMERSIVO NO TOPO */}
         <View style={styles.carouselContainer}>
@@ -396,7 +406,7 @@ export default function DetalhesScreen({ route, navigation }) {
 
           <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
 
-          {/* LINK EXTERNO / CARDÁPIO DIGITAL (ESTILO INTEGRADO AO TEMA) */}
+          {/* LINK EXTERNO / CARDÁPIO DIGITAL */}
           {linkExterno && String(linkExterno).trim() !== '' ? (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Link Externo / Cardápio</Text>
@@ -524,6 +534,15 @@ export default function DetalhesScreen({ route, navigation }) {
               </Text>
             )}
           </View>
+
+          {/* Dentro do seu componente DetalhesScreen, na sessão de localização:*/}
+          <OfflineMapCard
+            latitude={lat}
+            longitude={lng}
+            nome={nome}
+            endereco={endereco}
+            isDark={isDark}
+          />
 
           {/* BOTÃO MAPA */}
           {hasValidCoords && (
