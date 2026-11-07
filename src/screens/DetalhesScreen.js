@@ -1,5 +1,5 @@
 // src/screens/DetalhesScreen.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,11 +17,11 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'; // Adicionado MaterialCommunityIcons
 import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { isAbertoAgora } from '../utils/ScheduleHelper';
-import api from '../services/api'; // Importa o serviço unificado
+import api from '../services/api';
 
 import OfflineMapCard from '../components/OfflineMapCard';
 
@@ -37,17 +37,31 @@ const DIAS_SEMANA_LABELS = [
   { id: 'domingo', label: 'Domingo' }
 ];
 
-// Função para mascarar o telefone no padrão brasileiro: (51) 99902-5580 ou (51) 3333-3333
+// Função para mascarar o telefone no padrão brasileiro
 const formatarTelefoneBR = (numero) => {
   if (!numero) return '';
   const cleaned = String(numero).replace(/\D/g, '');
-  
   if (cleaned.length === 11) {
     return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
   } else if (cleaned.length === 10) {
     return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
   }
   return cleaned;
+};
+
+// Função auxiliar para ícones de serviços
+const getIconeServico = (tipoServico) => {
+  const icones = {
+    saude: 'hospital',
+    seguranca: 'police-badge',
+    combustivel: 'gas-station',
+    mercado: 'shopping',
+    automotivo: 'wrench',
+    publico: 'city',
+    farmacia: 'pharmacy',
+    banco: 'bank',
+  };
+  return icones[tipoServico] || 'information';
 };
 
 export default function DetalhesScreen({ route, navigation }) {
@@ -72,9 +86,9 @@ export default function DetalhesScreen({ route, navigation }) {
           const tLower = tipoAtual.toLowerCase();
           if (tLower.includes('restaurante') || tLower.includes('gastronomia')) rotaTipo = 'restaurantes';
           else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
+          else if (tLower === 'servicos') rotaTipo = 'servicos'; // ADICIONADO: Suporte a serviços
         }
 
-        // Utiliza o serviço unificado api.get
         const lista = await api.get(`/${rotaTipo}`);
         if (Array.isArray(lista)) {
           const itemAtualizado = lista.find(el => el.id === id);
@@ -104,8 +118,14 @@ export default function DetalhesScreen({ route, navigation }) {
     tipo,
     latitude,
     longitude,
-    coordenadas
+    coordenadas,
+    tipoServico,
+    funcionamento24h
   } = item;
+
+  // Lógica para identificar serviços e 24h
+  const isServico = tipo?.toLowerCase() === 'servicos';
+  const is24h = funcionamento24h === true;
 
   let lat = latitude;
   let lng = longitude;
@@ -124,9 +144,16 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const estaAberto = isAbertoAgora(item);
 
-  const whatsappList = Array.isArray(whatsapp)
-    ? whatsapp.filter(Boolean)
-    : (typeof whatsapp === 'string' && whatsapp.trim() ? [whatsapp] : []);
+  // Lógica robusta para WhatsApp: aceita tanto String (serviços) quanto Array (outros)
+  const whatsappList = useMemo(() => {
+    if (typeof whatsapp === 'string' && whatsapp.trim()) {
+      return [whatsapp];
+    }
+    if (Array.isArray(whatsapp)) {
+      return whatsapp.filter(Boolean);
+    }
+    return [];
+  }, [whatsapp]);
 
   useEffect(() => {
     async function checkFavorito() {
@@ -296,11 +323,11 @@ export default function DetalhesScreen({ route, navigation }) {
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={{ paddingBottom: 5 }}
         scrollEnabled={!isMapInteracting}
-        nestedScrollEnabled={true} // NOVO: Essencial para Android
-        overScrollMode="never" // NOVO: Remove efeito de overscroll no Android
-        bounces={false} // NOVO: Remove bounce no iOS
-        scrollEventThrottle={16} // Atualiza eventos de scroll mais rapidamente
-        removeClippedSubviews={true} // Otimiza performance
+        nestedScrollEnabled={true}
+        overScrollMode="never"
+        bounces={false}
+        scrollEventThrottle={16}
+        removeClippedSubviews={true}
       >
         
         {/* CARROSSEL IMERSIVO NO TOPO */}
@@ -316,48 +343,27 @@ export default function DetalhesScreen({ route, navigation }) {
             scrollEventThrottle={16}
             renderItem={({ item: imgUri }) => (
               <Image
-                source={{ uri: imgUri || '/placeholder.jpg' }}
+                source={{ uri: imgUri || 'https://images.unsplash.com/photo-1432821596592-e2c18b78144f' }}
                 style={styles.carouselImage}
                 contentFit="cover"
-                placeholder={require('../../assets/placeholder.jpg')}
                 cachePolicy="memory-disk"
               />
             )}
           />
 
-          {/* BOTÃO VOLTAR FLUTUANTE */}
-          <TouchableOpacity 
-            style={styles.floatingBackButton} 
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={styles.floatingBackButton} onPress={() => navigation.goBack()} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
 
-          {/* BOTÕES DE AÇÃO FLUTUANTES (FAVORITO E COMPARTILHAR) */}
           <View style={styles.floatingActionsRow}>
-            <TouchableOpacity 
-              style={styles.floatingActionButton} 
-              onPress={handleShare}
-              activeOpacity={0.8}
-            >
+            <TouchableOpacity style={styles.floatingActionButton} onPress={handleShare} activeOpacity={0.8}>
               <Ionicons name="share-social-outline" size={18} color="#fff" />
             </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={styles.floatingActionButton} 
-              onPress={handleToggleFavorito}
-              activeOpacity={0.8}
-            >
-              <Ionicons 
-                name={isFavorito ? 'heart' : 'heart-outline'} 
-                size={18} 
-                color={isFavorito ? '#ff3b30' : '#fff'} 
-              />
+            <TouchableOpacity style={styles.floatingActionButton} onPress={handleToggleFavorito} activeOpacity={0.8}>
+              <Ionicons name={isFavorito ? 'heart' : 'heart-outline'} size={18} color={isFavorito ? '#ff3b30' : '#fff'} />
             </TouchableOpacity>
           </View>
 
-          {/* SETAS DE NAVEGAÇÃO LATERAL (SE HOUVER MAIS DE 1 FOTO) */}
           {imageList.length > 1 && activeIndex > 0 && (
             <TouchableOpacity style={[styles.arrowButton, { left: 14 }]} onPress={() => scrollToIndex(activeIndex - 1)}>
               <Ionicons name="chevron-back" size={20} color="#FFF" />
@@ -369,23 +375,18 @@ export default function DetalhesScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {/* INDICADORES (DOTS) */}
           {imageList.length > 1 && (
             <View style={styles.paginationContainer}>
               {imageList.map((_, idx) => (
-                <View
-                  key={idx}
-                  style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]}
-                />
+                <View key={idx} style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]} />
               ))}
             </View>
           )}
         </View>
 
-        {/* PAINEL DE CONTEÚDO PRINCIPAL (ESTILO SHEET SOBREPOSTO) */}
+        {/* PAINEL DE CONTEÚDO PRINCIPAL */}
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
           
-          {/* TÍTULO E BADGE DE CATEGORIA */}
           <View style={styles.headerTitleRow}>
             <View style={styles.typeBadge}>
               <Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text>
@@ -393,10 +394,7 @@ export default function DetalhesScreen({ route, navigation }) {
 
             <View style={[
               styles.statusBadge, 
-              { 
-                backgroundColor: semAbertoBadgeBg(estaAberto),
-                borderColor: semAbertoBadgeBorder(estaAberto),
-              }
+              { backgroundColor: semAbertoBadgeBg(estaAberto), borderColor: semAbertoBadgeBorder(estaAberto) }
             ]}>
               <Text style={{ color: semAbertoBadgeColor(estaAberto), fontWeight: 'bold', fontSize: 11 }}>
                 {sempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
@@ -405,6 +403,26 @@ export default function DetalhesScreen({ route, navigation }) {
           </View>
 
           <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
+
+          {/* NOVO: Badge 24h e Tipo de Serviço (Apenas para Serviços Essenciais) */}
+          {isServico && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {is24h && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#dc2626', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
+                  <Ionicons name="time" size={14} color="#fff" />
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>24 HORAS</Text>
+                </View>
+              )}
+              {tipoServico && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#334155' : '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                  <MaterialCommunityIcons name={getIconeServico(tipoServico)} size={18} color={isDark ? '#94a3b8' : '#475569'} />
+                  <Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, fontWeight: '600', marginLeft: 6, textTransform: 'capitalize' }}>
+                    {tipoServico}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
 
           {/* LINK EXTERNO / CARDÁPIO DIGITAL */}
           {linkExterno && String(linkExterno).trim() !== '' ? (
@@ -424,7 +442,7 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* CONTATO WHATSAPP COM MÁSCARA */}
+          {/* CONTATO WHATSAPP (Agora suporta String e Array) */}
           {whatsappList.length > 0 && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>WhatsApp</Text>
@@ -449,38 +467,24 @@ export default function DetalhesScreen({ route, navigation }) {
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Redes Sociais</Text>
               <View style={styles.redesContainer}>
-                {redesSociais.instagram ? (
-                  <TouchableOpacity
-                    style={[styles.btnRedeSocial, { backgroundColor: '#e1306c' }]}
-                    onPress={() => abrirRedeSocial(redesSociais.instagram)}
-                    activeOpacity={0.8}
-                  >
+                {redesSociais.instagram && (
+                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#e1306c' }]} onPress={() => abrirRedeSocial(redesSociais.instagram)} activeOpacity={0.8}>
                     <Ionicons name="logo-instagram" size={18} color="#fff" />
                     <Text style={styles.btnRedeText}>Instagram</Text>
                   </TouchableOpacity>
-                ) : null}
-
-                {redesSociais.facebook ? (
-                  <TouchableOpacity
-                    style={[styles.btnRedeSocial, { backgroundColor: '#1877f2' }]}
-                    onPress={() => abrirRedeSocial(redesSociais.facebook)}
-                    activeOpacity={0.8}
-                  >
+                )}
+                {redesSociais.facebook && (
+                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#1877f2' }]} onPress={() => abrirRedeSocial(redesSociais.facebook)} activeOpacity={0.8}>
                     <Ionicons name="logo-facebook" size={18} color="#fff" />
                     <Text style={styles.btnRedeText}>Facebook</Text>
                   </TouchableOpacity>
-                ) : null}
-
-                {redesSociais.tiktok ? (
-                  <TouchableOpacity
-                    style={[styles.btnRedeSocial, { backgroundColor: '#000000' }]}
-                    onPress={() => abrirRedeSocial(redesSociais.tiktok)}
-                    activeOpacity={0.8}
-                  >
+                )}
+                {redesSociais.tiktok && (
+                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#000000' }]} onPress={() => abrirRedeSocial(redesSociais.tiktok)} activeOpacity={0.8}>
                     <Ionicons name="logo-tiktok" size={18} color="#fff" />
                     <Text style={styles.btnRedeText}>TikTok</Text>
                   </TouchableOpacity>
-                ) : null}
+                )}
               </View>
             </View>
           )}
@@ -505,7 +509,6 @@ export default function DetalhesScreen({ route, navigation }) {
           {/* HORÁRIO DE FUNCIONAMENTO */}
           <View style={styles.secao}>
             <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
-
             {sempreAberto ? (
               <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
                 <Ionicons name="time-outline" size={18} color="#10b981" />
@@ -535,7 +538,6 @@ export default function DetalhesScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* Dentro do seu componente DetalhesScreen, na sessão de localização:*/}
           <OfflineMapCard
             latitude={lat}
             longitude={lng}
@@ -570,180 +572,40 @@ function semAbertoBadgeColor(estaAberto) {
 
 const styles = StyleSheet.create({
   mainWrapper: { flex: 1 },
-  carouselContainer: {
-    width: SCREEN_WIDTH,
-    height: 310,
-    position: 'relative',
-  },
+  carouselContainer: { width: SCREEN_WIDTH, height: 310, position: 'relative' },
   carouselImage: { width: SCREEN_WIDTH, height: 310 },
-  floatingBackButton: {
-    position: 'absolute',
-    top: 48,
-    left: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  floatingActionsRow: {
-    position: 'absolute',
-    top: 48,
-    right: 20,
-    flexDirection: 'row',
-    gap: 10,
-    zIndex: 10,
-  },
-  floatingActionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  arrowButton: {
-    position: 'absolute',
-    top: '45%',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 18,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  paginationContainer: {
-    position: 'absolute',
-    bottom: 35,
-    flexDirection: 'row',
-    alignSelf: 'center',
-    zIndex: 10,
-  },
+  floatingBackButton: { position: 'absolute', top: 48, left: 20, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  floatingActionsRow: { position: 'absolute', top: 48, right: 20, flexDirection: 'row', gap: 10, zIndex: 10 },
+  floatingActionButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center' },
+  arrowButton: { position: 'absolute', top: '45%', backgroundColor: 'rgba(0, 0, 0, 0.5)', borderRadius: 18, width: 32, height: 32, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  paginationContainer: { position: 'absolute', bottom: 35, flexDirection: 'row', alignSelf: 'center', zIndex: 10 },
   dot: { width: 6, height: 6, borderRadius: 3, marginHorizontal: 3 },
   activeDot: { backgroundColor: '#FFF', width: 16 },
   inactiveDot: { backgroundColor: 'rgba(255, 255, 255, 0.5)' },
-  sheetContentContainer: {
-    flex: 1,
-    marginTop: -28,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  typeBadge: {
-    backgroundColor: 'rgba(0, 102, 204, 0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
+  sheetContentContainer: { flex: 1, marginTop: -28, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingTop: 24, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.15, shadowRadius: 10 },
+  headerTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  typeBadge: { backgroundColor: 'rgba(0, 102, 204, 0.12)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 },
   typeBadgeText: { color: '#0066cc', fontSize: 12, fontWeight: 'bold' },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  titulo: { fontSize: 24, fontWeight: 'bold', marginBottom: 16, lineHeight: 30 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1 },
+  titulo: { fontSize: 24, fontWeight: 'bold', marginBottom: 8, lineHeight: 30 },
   secao: { marginBottom: 20 },
   secaoTitulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  infoRowLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
+  infoRow: { flexDirection: 'row', alignItems: 'center' },
+  infoRowLink: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
   textoLink: { fontSize: 13, fontWeight: '600' },
   texto: { fontSize: 14, lineHeight: 20 },
-  whatsappContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  btnWhatsapp: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#25D366',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
-    gap: 6,
-  },
-  btnWhatsappText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  redesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  btnRedeSocial: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
-    gap: 6,
-  },
-  btnRedeText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  sempreAbertoBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 10,
-  },
+  whatsappContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  btnWhatsapp: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#25D366', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, gap: 6 },
+  btnWhatsappText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
+  redesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  btnRedeSocial: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, gap: 6 },
+  btnRedeText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
+  sempreAbertoBox: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, borderWidth: 1, gap: 10 },
   sempreAbertoText: { fontSize: 13, flex: 1, lineHeight: 18 },
   horariosListaContainer: { gap: 8 },
-  horarioRowItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-  },
+  horarioRowItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12 },
   horarioDiaLabel: { fontSize: 13, fontWeight: '600' },
   horarioHorasText: { fontSize: 13, color: '#10b981', fontWeight: '600' },
-  botaoMapaEstilizado: {
-    backgroundColor: '#0066cc',
-    paddingVertical: 14,
-    borderRadius: 24,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 10,
-    marginBottom: 100,
-    elevation: 4,
-    shadowColor: '#0066cc',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
+  botaoMapaEstilizado: { backgroundColor: '#0066cc', paddingVertical: 14, borderRadius: 24, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 10, marginBottom: 100, elevation: 4, shadowColor: '#0066cc', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
   botaoMapaTexto: { color: '#fff', fontSize: 15, fontWeight: 'bold' },
 });

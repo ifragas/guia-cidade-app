@@ -60,11 +60,12 @@ export default function HomeScreen({ navigation }) {
 
   const buscarTodosDados = async () => {
     try {
-      const [resTurismo, resRestaurantes, resAcomodacoes] =
+      const [resTurismo, resRestaurantes, resAcomodacoes, resServicos] =
         await Promise.allSettled([
           api.get('/pontos-turisticos'),
           api.get('/restaurantes'),
           api.get('/acomodacoes'),
+          api.get('/servicos'),
         ]);
 
       const turismoData = (
@@ -91,10 +92,19 @@ export default function HomeScreen({ navigation }) {
         tipoBadge: 'Hospedagem',
       }));
 
+      const servicosData = (
+        resServicos.status === 'fulfilled' ? resServicos.value : []
+      ).map((item) => ({
+        ...item,
+        categoriaPai: 'Serviços',
+        tipoBadge: 'servicos',
+      }));
+
       const combinados = [
         ...turismoData,
         ...restaurantesData,
         ...acomodacoesData,
+        ...servicosData,
       ];
 
       if (combinados.length > 0) {
@@ -148,12 +158,17 @@ export default function HomeScreen({ navigation }) {
     setFavoritosIds(atualizados);
   };
 
-  const categories = [
-    'Todos',
-    'Turismo',
-    'Restaurantes',
-    'Acomodações',
+  // Array de categorias com cores individuais
+  const categoriesData = [
+    { id: 'Todos', label: 'Todos', icon: 'apps', color: '#6366f1' },
+    { id: 'Turismo', label: 'Turismo', icon: 'location', color: '#0ea5e9' },
+    { id: 'Restaurantes', label: 'Restaurantes', icon: 'restaurant', color: '#f59e0b' },
+    { id: 'Acomodações', label: 'Acomodações', icon: 'bed', color: '#8b5cf6' },
+    { id: 'Serviços', label: 'Serviços', icon: 'business', color: '#10b981' },
   ];
+
+  // Pega a categoria selecionada para exibir no cabeçalho
+  const categoriaSelecionada = categoriesData.find(cat => cat.id === selectedCategory);
 
   let processados = allData.filter((item) => {
     const nomeItem = item.nome || item.title || '';
@@ -292,7 +307,7 @@ export default function HomeScreen({ navigation }) {
               </Text>
 
               <Text style={styles.heroSubText}>
-                Explore as melhores atrações e recantos de Riozinho
+                Explore as melhores atrações e recantos de Rolante!
               </Text>
             </View>
           </View>
@@ -323,90 +338,82 @@ export default function HomeScreen({ navigation }) {
             </View>
           )}
 
+          {/* CABEÇALHO COM PÍLULA ÚNICA ENVOLVENDO "Categoria: Nome" */}
           <View style={styles.sectionHeaderRow}>
-            <Text
+            {/* PÍLULA ÚNICA COM "Categoria: Nome" */}
+            <View
               style={[
-                styles.sectionTitle,
-                { color: colors.textPrimary },
+                styles.categoryPill,
+                { backgroundColor: categoriaSelecionada?.color || '#0066cc' },
               ]}
             >
-              Categorias Populares
-            </Text>
-          </View>
-
-          <View style={styles.filterWrapper}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterContainer}
+              <Text style={styles.categoryPillText}>
+                Categoria: {categoriaSelecionada?.label || 'Todos'}
+              </Text>
+            </View>
+            
+            {/* Botão "Mais Próximos" */}
+            <TouchableOpacity
+              style={[
+                styles.sortButton,
+                ordenarPorProximidade && styles.sortButtonActive,
+              ]}
+              onPress={() =>
+                setOrdenarPorProximidade(!ordenarPorProximidade)
+              }
             >
-              <TouchableOpacity
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor: colors.chipBackground,
-                    borderColor: colors.chipBorder,
-                  },
-                  ordenarPorProximidade && styles.filterChipActive,
-                ]}
-                onPress={() =>
-                  setOrdenarPorProximidade(!ordenarPorProximidade)
+              <Ionicons
+                name="navigate"
+                size={14}
+                color={
+                  ordenarPorProximidade
+                    ? '#fff'
+                    : colors.textSecondary
                 }
+                style={{ marginRight: 4 }}
+              />
+
+              <Text
+                style={[
+                  styles.sortButtonText,
+                  { color: colors.textSecondary },
+                  ordenarPorProximidade &&
+                    styles.sortButtonTextActive,
+                ]}
               >
-                <Ionicons
-                  name="navigate"
-                  size={14}
-                  color={
-                    ordenarPorProximidade
-                      ? '#fff'
-                      : colors.textSecondary
-                  }
-                  style={{ marginRight: 4 }}
-                />
-
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    { color: colors.chipText },
-                    ordenarPorProximidade &&
-                      styles.filterChipTextActive,
-                  ]}
-                >
-                  Mais Próximos
-                </Text>
-              </TouchableOpacity>
-
-              {categories.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[
-                    styles.filterChip,
-                    {
-                      backgroundColor: colors.chipBackground,
-                      borderColor: colors.chipBorder,
-                    },
-                    selectedCategory === cat &&
-                      !ordenarPorProximidade &&
-                      styles.filterChipActive,
-                  ]}
-                  onPress={() => setSelectedCategory(cat)}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      { color: colors.chipText },
-                      selectedCategory === cat &&
-                        !ordenarPorProximidade &&
-                        styles.filterChipTextActive,
-                    ]}
-                  >
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                Próximos
+              </Text>
+            </TouchableOpacity>
           </View>
 
+          {/* LISTA HORIZONTAL DE BOLINHAS COLORIDAS */}
+          <View style={styles.categoriesRow}>
+            {categoriesData.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryCircle,
+                    {
+                      backgroundColor: isSelected ? cat.color : (isDark ? '#334155' : '#f1f5f9'),
+                      borderColor: isSelected ? cat.color : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setSelectedCategory(cat.id)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={cat.icon}
+                    size={24}
+                    color={isSelected ? '#ffffff' : cat.color}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* LISTA DE RESULTADOS */}
           <View style={styles.sectionHeaderRow}>
             <Text
               style={[
@@ -578,32 +585,52 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: 'bold',
   },
-  filterWrapper: {
-    height: 42,
-    marginBottom: 16,
-  },
-  filterContainer: {
-    alignItems: 'center',
-  },
-  filterChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
+  // NOVO: Pílula única envolvendo "Categoria: Nome"
+  categoryPill: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
   },
-  filterChipActive: {
+  categoryPillText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  sortButtonActive: {
     backgroundColor: '#0066cc',
     borderColor: '#0066cc',
   },
-  filterChipText: {
-    fontSize: 13,
+  sortButtonText: {
+    fontSize: 12,
     fontWeight: '600',
   },
-  filterChipTextActive: {
-    color: '#fff',
+  sortButtonTextActive: {
+    color: '#ffffff',
+  },
+  categoriesRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  categoryCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
   },
   emptyContainer: {
     justifyContent: 'center',

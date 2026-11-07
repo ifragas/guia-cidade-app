@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Guia Turistico de Rolante",
-    "slug": "Guia-Oficial-Rolante",
+    "slug": "guia-cidade-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo.png",

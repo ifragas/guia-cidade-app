@@ -1,162 +1,166 @@
 // src/components/TravelCard.js
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { ImageBackground } from 'expo-image';
-import { calcularDistancia } from '../utils/LocationHelper';
+import { View, Text, TouchableOpacity, Image } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-export default function TravelCard({
-  item,
-  onPress,
-  onToggleFavorito,
-  isFavorito,
-  userLocation,
-  isDark,
-  badgeType = 'Recanto',
-  customBadgeColor,
-  statusBadge = null, // Ex: { aberto: boolean } para restaurantes
-}) {
-  const distanciaKm = userLocation && item.latitude && item.longitude 
-    ? calcularDistancia(userLocation.latitude, userLocation.longitude, parseFloat(item.latitude), parseFloat(item.longitude))
-    : null;
+// Função auxiliar para pegar o ícone correto do serviço
+const getIconeServico = (tipoServico) => {
+  const icones = {
+    saude: 'hospital',
+    seguranca: 'police-badge',
+    combustivel: 'gas-station',
+    mercado: 'shopping',
+    automotivo: 'wrench',
+    publico: 'city',
+    farmacia: 'pharmacy',
+    banco: 'bank',
+  };
+  return icones[tipoServico] || 'information';
+};
 
-  const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb';
+const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress, onToggleFavorito }) => {
+  const isServico = badgeType === 'servicos';
+  const is24h = item.funcionamento24h === true;
 
   return (
-    <TouchableOpacity
-      style={[styles.travelCard, { backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }]}
-      activeOpacity={0.9}
+    <TouchableOpacity 
+      activeOpacity={0.9} 
       onPress={onPress}
+      style={{
+        backgroundColor: isDark ? '#1e293b' : '#ffffff',
+        borderRadius: 16,
+        marginBottom: 16,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: isDark ? '#334155' : '#e2e8f0',
+      }}
     >
-      <View style={styles.travelCardImageWrapper}>
-        <ImageBackground
-          source={{ uri: imagemCap }}
-          style={styles.travelCardImage}
-          imageStyle={{ borderRadius: 20 }}
-          contentFit="cover"
-          placeholder={require('../../assets/placeholder.jpg')}
-          cachePolicy="memory-disk"
+      {/* Seção da Imagem */}
+      <View style={{ position: 'relative' }}>
+        <Image 
+          source={{ uri: item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1432821596592-e2c18b78144f' }} 
+          style={{ width: '100%', height: 160 }}
+          resizeMode="cover"
+        />
+        
+        {/* Botão de Favorito */}
+        <TouchableOpacity 
+          onPress={onToggleFavorito}
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            backgroundColor: 'rgba(0,0,0,0.4)',
+            borderRadius: 20,
+            padding: 8,
+          }}
         >
-          {/* BADGES SUPERIORES */}
-          <View style={styles.badgeRowContainer}>
-            <View style={[styles.travelTypeBadge, customBadgeColor && { backgroundColor: customBadgeColor }]}>
-              <Text style={styles.travelTypeBadgeText}>{badgeType}</Text>
-            </View>
+          <Ionicons 
+            name={isFavorito ? 'heart' : 'heart-outline'} 
+            size={20} 
+            color={isFavorito ? '#ef4444' : '#ffffff'} 
+          />
+        </TouchableOpacity>
 
-            {statusBadge && (
-              <View style={[
-                styles.statusBadge, 
-                { 
-                  backgroundColor: statusBadge.aberto ? 'rgba(16, 185, 129, 0.9)' : 'rgba(225, 29, 72, 0.9)',
-                  borderColor: statusBadge.aberto ? '#10b981' : '#e11d48'
-                }
-              ]}>
-                <Text style={styles.statusText}>
-                  {statusBadge.aberto ? '● Aberto' : '● Fechado'}
+        {/* Badges: 24h ou Categoria */}
+        <View style={{ position: 'absolute', top: 12, left: 12, flexDirection: 'row', gap: 8 }}>
+          {isServico && is24h && (
+            <View style={{
+              backgroundColor: '#dc2626',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}>
+              <MaterialCommunityIcons name="clock-outline" size={14} color="#ffffff" />
+              <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: 'bold', marginLeft: 4 }}>
+                24 HORAS
+              </Text>
+            </View>
+          )}
+          
+          {!isServico && (
+            <View style={{
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 6,
+            }}>
+              <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '600' }}>
+                {badgeType}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Seção de Conteúdo */}
+      <View style={{ padding: 16 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Text 
+              numberOfLines={2}
+              style={{
+                fontSize: 16,
+                fontWeight: 'bold',
+                color: isDark ? '#f8fafc' : '#0f172a',
+                marginBottom: 4,
+              }}
+            >
+              {item.nome || item.title}
+            </Text>
+            
+            {/* Subtítulo com ícone específico para serviços */}
+            {isServico && item.tipoServico && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <MaterialCommunityIcons 
+                  name={getIconeServico(item.tipoServico)} 
+                  size={16} 
+                  color={isDark ? '#94a3b8' : '#64748b'} 
+                />
+                <Text style={{ 
+                  fontSize: 13, 
+                  color: isDark ? '#94a3b8' : '#64748b', 
+                  marginLeft: 6,
+                  textTransform: 'capitalize'
+                }}>
+                  {item.tipoServico}
+                </Text>
+              </View>
+            )}
+
+            {/* Endereço */}
+            {item.endereco && (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="location-outline" size={14} color={isDark ? '#94a3b8' : '#64748b'} />
+                <Text 
+                  numberOfLines={1}
+                  style={{ 
+                    fontSize: 13, 
+                    color: isDark ? '#94a3b8' : '#64748b', 
+                    marginLeft: 6,
+                    flex: 1
+                  }}
+                >
+                  {item.endereco}
                 </Text>
               </View>
             )}
           </View>
 
-          {/* BOTÃO DE FAVORITO */}
-          <TouchableOpacity
-            style={styles.travelHeartButton}
-            onPress={onToggleFavorito}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name={isFavorito ? 'heart' : 'heart-outline'}
-              size={18}
-              color={isFavorito ? '#ff3b30' : '#333'}
-            />
-          </TouchableOpacity>
-        </ImageBackground>
-      </View>
-
-      {/* CONTEÚDO INFERIOR DO CARD */}
-      <View style={styles.travelCardContent}>
-        <View style={styles.travelCardHeaderRow}>
-          <Text style={[styles.travelCardTitle, { color: isDark ? '#ffffff' : '#111827' }]} numberOfLines={1}>
-            {item.nome}
-          </Text>
-          {distanciaKm && (
-            <View style={styles.travelDistanceRow}>
-              <Ionicons name="location-outline" size={12} color={isDark ? '#9ca3af' : '#6b7280'} />
-              <Text style={[styles.travelDistanceText, { color: isDark ? '#9ca3af' : '#6b7280' }]}>
-                {distanciaKm} km
+          {/* Distância (se aplicável) */}
+          {userLocation && item.distanciaNum && item.distanciaNum < 9999 && (
+            <View style={{ alignItems: 'flex-end', marginLeft: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0ea5e9' }}>
+                {item.distanciaNum < 1 ? `${Math.round(item.distanciaNum * 1000)} m` : `${item.distanciaNum.toFixed(1)} km`}
               </Text>
             </View>
           )}
         </View>
-
-        <Text style={[styles.travelCardSub, { color: isDark ? '#9ca3af' : '#6b7280' }]} numberOfLines={1}>
-          {item.endereco || 'Riozinho, RS'}
-        </Text>
       </View>
     </TouchableOpacity>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  travelCard: {
-    width: '100%',
-    marginBottom: 18,
-    borderRadius: 20,
-  },
-  travelCardImageWrapper: {
-    width: '100%',
-    height: 165,
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  travelCardImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'space-between',
-    flexDirection: 'row',
-    padding: 12,
-  },
-  badgeRowContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-  },
-  travelTypeBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  travelTypeBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  statusText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
-  travelHeartButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-  },
-  travelCardContent: {
-    paddingTop: 8,
-    paddingHorizontal: 2,
-  },
-  travelCardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  travelCardTitle: { fontSize: 16, fontWeight: 'bold', flex: 1 },
-  travelDistanceRow: { flexDirection: 'row', alignItems: 'center', marginLeft: 8 },
-  travelDistanceText: { fontSize: 12, marginLeft: 2 },
-  travelCardSub: { fontSize: 13 },
-});
+export default TravelCard;
