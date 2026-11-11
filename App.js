@@ -1,11 +1,10 @@
-
+// App.js
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
   Image,
 } from 'react-native';
-
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -13,8 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
 import HomeScreen from './src/screens/HomeScreen';
-import RestaurantesScreen from './src/screens/RestaurantesScreen';
-import AcomodacoesScreen from './src/screens/AcomodacoesScreen';
+import EventosScreen from './src/screens/EventosScreen';
 import FavoritosScreen from './src/screens/FavoritosScreen';
 import DetalhesScreen from './src/screens/DetalhesScreen';
 
@@ -28,28 +26,19 @@ const defaultScreenOptions = {
   headerShown: false,
 };
 
-function PontosStack() {
+function HomeStack() {
   return (
     <Stack.Navigator screenOptions={defaultScreenOptions}>
-      <Stack.Screen name="PontosList" component={HomeScreen} />
+      <Stack.Screen name="HomeList" component={HomeScreen} />
       <Stack.Screen name="Detalhes" component={DetalhesScreen} />
     </Stack.Navigator>
   );
 }
 
-function RestaurantesStack() {
+function EventosStack() {
   return (
     <Stack.Navigator screenOptions={defaultScreenOptions}>
-      <Stack.Screen name="RestaurantesList" component={RestaurantesScreen} />
-      <Stack.Screen name="Detalhes" component={DetalhesScreen} />
-    </Stack.Navigator>
-  );
-}
-
-function AcomodacoesStack() {
-  return (
-    <Stack.Navigator screenOptions={defaultScreenOptions}>
-      <Stack.Screen name="AcomodacoesList" component={AcomodacoesScreen} />
+      <Stack.Screen name="EventosList" component={EventosScreen} />
       <Stack.Screen name="Detalhes" component={DetalhesScreen} />
     </Stack.Navigator>
   );
@@ -67,22 +56,16 @@ function FavoritosStack() {
 export default function App() {
   const { ready } = useTranslation();
   const { isDark } = useThemeColors();
-
   const [showSplash, setShowSplash] = useState(true);
 
-  // Exibe a identidade visual por 2,5 segundos
-  // depois que as traduções estiverem carregadas.
   useEffect(() => {
     if (!ready) return;
-
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 4000);
-
     return () => clearTimeout(timer);
   }, [ready]);
 
-  // Tela de abertura personalizada
   if (!ready || showSplash) {
     return (
       <View style={styles.splashContainer}>
@@ -101,17 +84,13 @@ export default function App() {
         screenOptions={({ route }) => ({
           tabBarIcon: ({ focused }) => {
             let iconName;
-
-            if (route.name === 'PontosTab') {
-              iconName = focused ? 'compass' : 'compass-outline';
-            } else if (route.name === 'RestaurantesTab') {
-              iconName = focused ? 'restaurant' : 'restaurant-outline';
-            } else if (route.name === 'AcomodacoesTab') {
-              iconName = focused ? 'bed' : 'bed-outline';
+            if (route.name === 'HomeTab') {
+              iconName = focused ? 'home' : 'home-outline';
+            } else if (route.name === 'EventosTab') {
+              iconName = focused ? 'calendar' : 'calendar-outline';
             } else if (route.name === 'FavoritosTab') {
               iconName = focused ? 'heart' : 'heart-outline';
             }
-
             return (
               <View
                 style={[
@@ -135,9 +114,8 @@ export default function App() {
           headerShown: false,
         })}
       >
-        <Tab.Screen name="PontosTab" component={PontosStack} />
-        <Tab.Screen name="RestaurantesTab" component={RestaurantesStack} />
-        <Tab.Screen name="AcomodacoesTab" component={AcomodacoesStack} />
+        <Tab.Screen name="HomeTab" component={HomeStack} />
+        <Tab.Screen name="EventosTab" component={EventosStack} />
         <Tab.Screen name="FavoritosTab" component={FavoritosStack} />
       </Tab.Navigator>
     </NavigationContainer>
@@ -145,19 +123,16 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-
   splashContainer: {
     flex: 1,
     backgroundColor: '#EAF8FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   splashImage: {
     width: '100%',
     height: '100%',
   },
-
   tabBar: {
     position: 'absolute',
     bottom: 24,
@@ -181,7 +156,6 @@ const styles = StyleSheet.create({
       height: 7,
     },
   },
-
   tabBarItem: {
     flex: 1,
     height: 66,
@@ -190,7 +164,6 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
   },
-
   tabBarIcon: {
     flex: 1,
     alignItems: 'center',
@@ -198,7 +171,6 @@ const styles = StyleSheet.create({
     margin: 0,
     padding: 0,
   },
-
   iconContainer: {
     width: 44,
     height: 44,
@@ -206,7 +178,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   iconContainerFocused: {
     backgroundColor: '#2B2B2B',
   },

@@ -37,7 +37,6 @@ const DIAS_SEMANA_LABELS = [
   { id: 'domingo', label: 'Domingo' }
 ];
 
-// Função para mascarar o telefone no padrão brasileiro
 const formatarTelefoneBR = (numero) => {
   if (!numero) return '';
   const cleaned = String(numero).replace(/\D/g, '');
@@ -49,7 +48,6 @@ const formatarTelefoneBR = (numero) => {
   return cleaned;
 };
 
-// Função auxiliar para ícones de serviços
 const getIconeServico = (tipoServico) => {
   const icones = {
     saude: 'hospital',
@@ -87,11 +85,12 @@ export default function DetalhesScreen({ route, navigation }) {
           if (tLower.includes('restaurante') || tLower.includes('gastronomia')) rotaTipo = 'restaurantes';
           else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
           else if (tLower === 'servicos') rotaTipo = 'servicos';
+          else if (tLower.includes('evento')) rotaTipo = 'eventos';
         }
 
         const lista = await api.get(`/${rotaTipo}`);
         if (Array.isArray(lista)) {
-          const itemAtualizado = lista.find(el => el.id === id);
+          const itemAtualizado = lista.find(el => String(el.id) === String(id));
           if (itemAtualizado) {
             setItem(prev => ({ ...prev, ...itemAtualizado }));
           }
@@ -105,9 +104,11 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const {
     nome,
+    titulo,
     descricao,
     endereco,
     horario,
+    recorrenciaDescricao,
     horarios,
     sempreAberto,
     whatsapp,
@@ -121,9 +122,15 @@ export default function DetalhesScreen({ route, navigation }) {
     coordenadas,
     tipoServico,
     funcionamento24h,
-    telefone
+    telefone,
+    gratuito,
+    preco,
+    dataInicio,
+    dataFim,
+    proximaOcorrencia
   } = item;
 
+  const displayNome = nome || titulo || 'Detalhes';
   const isServico = tipo?.toLowerCase() === 'servicos';
   const is24h = funcionamento24h === true || funcionamento24h === 'true' || sempreAberto === true;
   const ehSempreAberto = sempreAberto || is24h;
@@ -143,7 +150,7 @@ export default function DetalhesScreen({ route, navigation }) {
   const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLng);
   const imageList = Array.isArray(imagens) && imagens.length > 0 ? imagens : [imagem];
 
-  const estaAberto = isAbertoAgora(item);
+  const estaAberto = item.acontecendoAgora !== undefined ? item.acontecendoAgora : isAbertoAgora(item);
 
   const whatsappList = useMemo(() => {
     if (typeof whatsapp === 'string' && whatsapp.trim()) {
@@ -159,7 +166,7 @@ export default function DetalhesScreen({ route, navigation }) {
     async function checkFavorito() {
       if (!id) return;
       const favs = await getFavoritos();
-      if (favs.includes(id)) {
+      if (favs.includes(String(id))) {
         setIsFavorito(true);
       }
     }
@@ -168,14 +175,14 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const handleToggleFavorito = async () => {
     if (!id) return;
-    const atualizados = await toggleFavorito(id);
-    setIsFavorito(atualizados.includes(id));
+    const atualizados = await toggleFavorito(String(id));
+    setIsFavorito(atualizados.includes(String(id)));
   };
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Confira ${nome} no Guia Turístico! ${endereco ? 'Endereço: ' + endereco : ''}`,
+        message: `Confira ${displayNome} no Guia Turístico! ${endereco ? 'Endereço: ' + endereco : ''}`,
       });
     } catch (error) {
       Alert.alert(t('error', 'Erro'), 'Não foi possível partilhar o local.');
@@ -196,10 +203,9 @@ export default function DetalhesScreen({ route, navigation }) {
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Abrir o discador do telefone
   const abrirTelefone = async (numero) => {
     if (!numero) return;
-    const cleanNum = String(numero).replace(/\D/g, ''); // Remove tudo que não é número
+    const cleanNum = String(numero).replace(/\D/g, '');
     const url = `tel:${cleanNum}`;
     try {
       const supported = await Linking.canOpenURL(url);
@@ -260,7 +266,7 @@ export default function DetalhesScreen({ route, navigation }) {
       return;
     }
 
-    const label = encodeURIComponent(nome || 'Local');
+    const label = encodeURIComponent(displayNome || 'Local');
 
     const opcoes = [
       {
@@ -304,7 +310,7 @@ export default function DetalhesScreen({ route, navigation }) {
           options: [...opcoes.map(o => o.label), 'Cancelar'],
           cancelButtonIndex: opcoes.length,
           title: 'Como deseja navegar?',
-          message: `Escolha o aplicativo de mapas para traçar a rota até ${nome}`,
+          message: `Escolha o aplicativo de mapas para traçar a rota até ${displayNome}`,
         },
         (buttonIndex) => {
           if (buttonIndex < opcoes.length) {
@@ -316,7 +322,7 @@ export default function DetalhesScreen({ route, navigation }) {
     } else {
       Alert.alert(
         'Como deseja navegar?',
-        `Escolha o aplicativo de mapas para traçar a rota até ${nome}`,
+        `Escolha o aplicativo de mapas para traçar a rota até ${displayNome}`,
         [
           ...opcoes.map(opcao => ({
             text: opcao.label,
@@ -331,6 +337,41 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
   const hasRedesSociais = redesSociais && (redesSociais.instagram || redesSociais.facebook || redesSociais.tiktok);
+  
+  const formatarPeriodoEvento = () => {
+    if (!dataInicio) return 'Data não especificada';
+
+    const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+    const dtInicio = new Date(dataInicio.includes('T') ? dataInicio : dataInicio + 'T00:00:00');
+    const diaSemanaInicio = diasSemana[dtInicio.getDay()];
+    const dataInicioStr = dtInicio.toLocaleDateString('pt-BR');
+    const horaInicioStr = dtInicio.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    if (dataFim && dataFim !== dataInicio) {
+      const dtFim = new Date(dataFim.includes('T') ? dataFim : dataFim + 'T23:59:59');
+      const diaSemanaFim = diasSemana[dtFim.getDay()];
+      const dataFimStr = dtFim.toLocaleDateString('pt-BR');
+      const horaFimStr = dtFim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+      const exibirHoraInicio = horaInicioStr !== '00:00' ? ` às ${horaInicioStr}` : '';
+      const exibirHoraFim = (horaFimStr !== '00:00' && horaFimStr !== '23:59') ? ` às ${horaFimStr}` : '';
+
+      return `Inicia ${diaSemanaInicio}, ${dataInicioStr}${exibirHoraInicio} e encerra em ${diaSemanaFim}, ${dataFimStr}${exibirHoraFim}`;
+    }
+
+    if (proximaOcorrencia && proximaOcorrencia.inicio) {
+      const hInicio = new Date(proximaOcorrencia.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const hFim = proximaOcorrencia.fim ? new Date(proximaOcorrencia.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      return `${diaSemanaInicio}, ${dataInicioStr} das ${hInicio} às ${hFim}`;
+    }
+
+    return `${diaSemanaInicio}, ${dataInicioStr}`;
+  };
+
+  const displayHorario = recorrenciaDescricao && recorrenciaDescricao !== 'Evento único' 
+    ? `${recorrenciaDescricao} (Válido de ${formatarPeriodoEvento()})`
+    : formatarPeriodoEvento();
 
   return (
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
@@ -347,7 +388,6 @@ export default function DetalhesScreen({ route, navigation }) {
         removeClippedSubviews={true}
       >
         
-        {/* CARROSSEL IMERSIVO NO TOPO */}
         <View style={styles.carouselContainer}>
           <FlatList
             ref={flatListRef}
@@ -401,7 +441,6 @@ export default function DetalhesScreen({ route, navigation }) {
           )}
         </View>
 
-        {/* PAINEL DE CONTEÚDO PRINCIPAL */}
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
           
           <View style={styles.headerTitleRow}>
@@ -411,17 +450,18 @@ export default function DetalhesScreen({ route, navigation }) {
 
             <View style={[
               styles.statusBadge, 
-              { backgroundColor: semAbertoBadgeBg(ehSempreAberto), borderColor: semAbertoBadgeBorder(ehSempreAberto) }
+              { backgroundColor: estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)', borderColor: estaAberto ? '#10b981' : '#e11d48' }
             ]}>
-              <Text style={{ color: semAbertoBadgeColor(ehSempreAberto), fontWeight: 'bold', fontSize: 11 }}>
-                {ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
+              <Text style={{ color: estaAberto ? '#10b981' : '#e11d48', fontWeight: 'bold', fontSize: 11 }}>
+                {tipo?.toLowerCase() === 'evento' 
+                  ? (estaAberto ? '● Acontecendo Agora' : '● Em Breve') 
+                  : (ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado'))}
               </Text>
             </View>
           </View>
 
-          <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
+          <Text style={[styles.titulo, { color: colors.textPrimary }]}>{displayNome}</Text>
 
-          {/* Badge 24h e Tipo de Serviço (Apenas para Serviços Essenciais) */}
           {isServico && (
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
               {is24h && (
@@ -441,7 +481,54 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* ✅ TELEFONE FIXO CLICÁVEL (Abre o discador) */}
+          {/* INGRESSO / VALOR (Apenas para Eventos) */}
+          {tipo?.toLowerCase() === 'evento' && (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ingresso / Valor</Text>
+              <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
+                <Ionicons name="ticket-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
+                <Text style={[styles.texto, { color: colors.textPrimary, fontWeight: '600', flex: 1 }]}>
+                  {gratuito ? 'Gratuito' : (preco ? `R$ ${preco}` : 'Valor não informado')}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* DATA E HORÁRIO (MOVIDO PARA CIMA - Logo após Ingresso) */}
+          <View style={styles.secao}>
+            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{tipo?.toLowerCase() === 'evento' ? 'Data e Horário' : t('schedule', 'Horário de Funcionamento')}</Text>
+            
+            {sempreAberto || is24h ? (
+              <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
+                <Ionicons name="time-outline" size={18} color="#10b981" />
+                <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
+                  Este local possui acesso livre a qualquer momento, sem restrição de horários.
+                </Text>
+              </View>
+            ) : hasHorariosObj ? (
+              <View style={styles.horariosListaContainer}>
+                {DIAS_SEMANA_LABELS.map((dia) => {
+                  const info = horarios[dia.id];
+                  if (!info) return null;
+                  return (
+                    <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground || (isDark ? '#1e1e1e' : '#f8fafc') }]}>
+                      <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
+                      <Text style={styles.horarioHorasText}>
+                        {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
+                <Ionicons name="calendar-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
+                <Text style={[styles.texto, { color: colors.textPrimary, flex: 1, lineHeight: 20 }]}>{displayHorario}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* TELEFONE FIXO */}
           {telefone && String(telefone).trim() !== '' && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ligar (Telefone Fixo)</Text>
@@ -459,10 +546,10 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* LINK EXTERNO / CARDÁPIO DIGITAL */}
+          {/* LINK EXTERNO */}
           {linkExterno && String(linkExterno).trim() !== '' ? (
             <View style={styles.secao}>
-              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Link Externo / Cardápio</Text>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Link Externo / Mais Informações</Text>
               <TouchableOpacity 
                 style={[styles.infoRowLink, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', borderColor: colors.border }]} 
                 onPress={() => abrirLinkExterno(linkExterno)}
@@ -477,7 +564,7 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* CONTATO WHATSAPP */}
+          {/* WHATSAPP */}
           {whatsappList.length > 0 && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>WhatsApp</Text>
@@ -527,7 +614,7 @@ export default function DetalhesScreen({ route, navigation }) {
           {/* DESCRIÇÃO */}
           <View style={styles.secao}>
             <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description', 'Descrição')}</Text>
-            <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao}</Text>
+            <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao || 'Descrição não disponível.'}</Text>
           </View>
 
           {/* ENDEREÇO */}
@@ -541,48 +628,14 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* HORÁRIO DE FUNCIONAMENTO */}
-          <View style={styles.secao}>
-            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
-            
-            {sempreAberto || is24h ? (
-              <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
-                <Ionicons name="time-outline" size={18} color="#10b981" />
-                <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
-                  Este local possui acesso livre a qualquer momento, sem restrição de horários.
-                </Text>
-              </View>
-            ) : hasHorariosObj ? (
-              <View style={styles.horariosListaContainer}>
-                {DIAS_SEMANA_LABELS.map((dia) => {
-                  const info = horarios[dia.id];
-                  if (!info) return null;
-                  return (
-                    <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground || (isDark ? '#1e1e1e' : '#f8fafc') }]}>
-                      <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
-                      <Text style={styles.horarioHorasText}>
-                        {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <Text style={[styles.texto, { color: colors.textSecondary }]}>
-                {horario || 'Horário não especificado'}
-              </Text>
-            )}
-          </View>
-
           <OfflineMapCard
             latitude={lat}
             longitude={lng}
-            nome={nome}
+            nome={displayNome}
             endereco={endereco}
             isDark={isDark}
           />
 
-          {/* BOTÃO MAPA */}
           {hasValidCoords && (
             <TouchableOpacity style={styles.botaoMapaEstilizado} onPress={abrirNoMapa} activeOpacity={0.85}>
               <Ionicons name="map" size={18} color="#fff" style={{ marginRight: 8 }} />
@@ -594,16 +647,6 @@ export default function DetalhesScreen({ route, navigation }) {
       </ScrollView>
     </View>
   );
-}
-
-function semAbertoBadgeBg(estaAberto) {
-  return estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)';
-}
-function semAbertoBadgeBorder(estaAberto) {
-  return estaAberto ? '#10b981' : '#e11d48';
-}
-function semAbertoBadgeColor(estaAberto) {
-  return estaAberto ? '#10b981' : '#e11d48';
 }
 
 const styles = StyleSheet.create({

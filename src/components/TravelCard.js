@@ -3,7 +3,6 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Image } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-// Função auxiliar para pegar o ícone correto do serviço
 const getIconeServico = (tipoServico) => {
   const icones = {
     saude: 'hospital',
@@ -35,7 +34,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
         borderColor: isDark ? '#334155' : '#e2e8f0',
       }}
     >
-      {/* Seção da Imagem */}
       <View style={{ position: 'relative' }}>
         <Image 
           source={{ uri: item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1432821596592-e2c18b78144f' }} 
@@ -43,7 +41,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
           resizeMode="cover"
         />
         
-        {/* Botão de Favorito */}
         <TouchableOpacity 
           onPress={onToggleFavorito}
           style={{
@@ -62,7 +59,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
           />
         </TouchableOpacity>
 
-        {/* Badges: 24h ou Categoria */}
         <View style={{ position: 'absolute', top: 12, left: 12, flexDirection: 'row', gap: 8 }}>
           {isServico && is24h && (
             <View style={{
@@ -95,7 +91,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
         </View>
       </View>
 
-      {/* Seção de Conteúdo */}
       <View style={{ padding: 16 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <View style={{ flex: 1 }}>
@@ -108,10 +103,10 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
                 marginBottom: 4,
               }}
             >
-              {item.nome || item.title}
+              {/* CORREÇÃO: Adicionado item.titulo como fallback garantido */}
+              {item.nome || item.titulo || 'Sem título'}
             </Text>
             
-            {/* Subtítulo com ícone específico para serviços */}
             {isServico && item.tipoServico && (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                 <MaterialCommunityIcons 
@@ -130,7 +125,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
               </View>
             )}
 
-            {/* Endereço */}
             {item.endereco && (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Ionicons name="location-outline" size={14} color={isDark ? '#94a3b8' : '#64748b'} />
@@ -149,7 +143,6 @@ const TravelCard = ({ item, isDark, isFavorito, userLocation, badgeType, onPress
             )}
           </View>
 
-          {/* Distância (se aplicável) */}
           {userLocation && item.distanciaNum && item.distanciaNum < 9999 && (
             <View style={{ alignItems: 'flex-end', marginLeft: 12 }}>
               <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0ea5e9' }}>
