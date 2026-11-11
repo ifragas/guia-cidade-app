@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Image } from 'expo-image';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons'; // Adicionado MaterialCommunityIcons
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { isAbertoAgora } from '../utils/ScheduleHelper';
@@ -86,7 +86,7 @@ export default function DetalhesScreen({ route, navigation }) {
           const tLower = tipoAtual.toLowerCase();
           if (tLower.includes('restaurante') || tLower.includes('gastronomia')) rotaTipo = 'restaurantes';
           else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
-          else if (tLower === 'servicos') rotaTipo = 'servicos'; // ADICIONADO: Suporte a serviços
+          else if (tLower === 'servicos') rotaTipo = 'servicos';
         }
 
         const lista = await api.get(`/${rotaTipo}`);
@@ -120,12 +120,13 @@ export default function DetalhesScreen({ route, navigation }) {
     longitude,
     coordenadas,
     tipoServico,
-    funcionamento24h
+    funcionamento24h,
+    telefone
   } = item;
 
-  // Lógica para identificar serviços e 24h
   const isServico = tipo?.toLowerCase() === 'servicos';
-  const is24h = funcionamento24h === true;
+  const is24h = funcionamento24h === true || funcionamento24h === 'true' || sempreAberto === true;
+  const ehSempreAberto = sempreAberto || is24h;
 
   let lat = latitude;
   let lng = longitude;
@@ -144,7 +145,6 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const estaAberto = isAbertoAgora(item);
 
-  // Lógica robusta para WhatsApp: aceita tanto String (serviços) quanto Array (outros)
   const whatsappList = useMemo(() => {
     if (typeof whatsapp === 'string' && whatsapp.trim()) {
       return [whatsapp];
@@ -193,6 +193,23 @@ export default function DetalhesScreen({ route, navigation }) {
     if (index >= 0 && index < imageList.length) {
       flatListRef.current?.scrollToIndex({ index, animated: true });
       setActiveIndex(index);
+    }
+  };
+
+  // ✅ NOVA FUNÇÃO: Abrir o discador do telefone
+  const abrirTelefone = async (numero) => {
+    if (!numero) return;
+    const cleanNum = String(numero).replace(/\D/g, ''); // Remove tudo que não é número
+    const url = `tel:${cleanNum}`;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o discador neste dispositivo.');
+      }
+    } catch (err) {
+      Alert.alert(t('error', 'Erro'), 'Erro ao abrir o discador.');
     }
   };
 
@@ -394,17 +411,17 @@ export default function DetalhesScreen({ route, navigation }) {
 
             <View style={[
               styles.statusBadge, 
-              { backgroundColor: semAbertoBadgeBg(estaAberto), borderColor: semAbertoBadgeBorder(estaAberto) }
+              { backgroundColor: semAbertoBadgeBg(ehSempreAberto), borderColor: semAbertoBadgeBorder(ehSempreAberto) }
             ]}>
-              <Text style={{ color: semAbertoBadgeColor(estaAberto), fontWeight: 'bold', fontSize: 11 }}>
-                {sempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
+              <Text style={{ color: semAbertoBadgeColor(ehSempreAberto), fontWeight: 'bold', fontSize: 11 }}>
+                {ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado')}
               </Text>
             </View>
           </View>
 
           <Text style={[styles.titulo, { color: colors.textPrimary }]}>{nome}</Text>
 
-          {/* NOVO: Badge 24h e Tipo de Serviço (Apenas para Serviços Essenciais) */}
+          {/* Badge 24h e Tipo de Serviço (Apenas para Serviços Essenciais) */}
           {isServico && (
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
               {is24h && (
@@ -421,6 +438,24 @@ export default function DetalhesScreen({ route, navigation }) {
                   </Text>
                 </View>
               )}
+            </View>
+          )}
+
+          {/* ✅ TELEFONE FIXO CLICÁVEL (Abre o discador) */}
+          {telefone && String(telefone).trim() !== '' && (
+            <View style={styles.secao}>
+              <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ligar (Telefone Fixo)</Text>
+              <TouchableOpacity 
+                style={[styles.infoRowLink, { borderColor: colors.border }]} 
+                onPress={() => abrirTelefone(telefone)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="call-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
+                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]}>
+                  {formatarTelefoneBR(telefone)}
+                </Text>
+                <Ionicons name="call" size={16} color="#10b981" />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -442,7 +477,7 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           ) : null}
 
-          {/* CONTATO WHATSAPP (Agora suporta String e Array) */}
+          {/* CONTATO WHATSAPP */}
           {whatsappList.length > 0 && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>WhatsApp</Text>
@@ -509,7 +544,8 @@ export default function DetalhesScreen({ route, navigation }) {
           {/* HORÁRIO DE FUNCIONAMENTO */}
           <View style={styles.secao}>
             <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('schedule', 'Horário de Funcionamento')}</Text>
-            {sempreAberto ? (
+            
+            {sempreAberto || is24h ? (
               <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
                 <Ionicons name="time-outline" size={18} color="#10b981" />
                 <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
