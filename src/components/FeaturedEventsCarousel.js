@@ -6,10 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { calcularDistancia } from '../utils/LocationHelper';
 import { useThemeColors } from '../utils/ThemeContext';
+import { salvarCache, obterCache } from '../utils/CacheHelper'; // ✅ ADICIONADO
 import api from '../services/api';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.72; 
+const CACHE_KEY = 'featured_events_cache_v1'; // ✅ ADICIONADO
 
 export default function FeaturedEventsCarousel({ navigation }) {
   const [events, setEvents] = useState([]);
@@ -19,17 +21,33 @@ export default function FeaturedEventsCarousel({ navigation }) {
 
   useEffect(() => {
     const init = async () => {
-      // 1. Buscar eventos
+      // 1. ESTRATÉGIA CACHE-FIRST: Carrega instantaneamente se houver dados salvos
+      try {
+        const cachedData = await obterCache(CACHE_KEY);
+        if (Array.isArray(cachedData) && cachedData.length > 0) {
+          setEvents(cachedData);
+          setLoading(false); // Exibe imediatamente, sem esperar a API
+        }
+      } catch (error) {
+        console.log('Erro ao ler cache de eventos:', error);
+      }
+
+      // 2. TENTATIVA DE ATUALIZAÇÃO EM BACKGROUND
       try {
         const data = await api.get('/eventos?destaque=true&limit=5');
         if (Array.isArray(data) && data.length > 0) {
           setEvents(data);
+          await salvarCache(CACHE_KEY, data); // Atualiza o cache com os dados frescos
         }
       } catch (error) {
-        console.log('Erro ao carregar eventos em destaque:', error.message);
+        console.log('API de eventos falhou (usando cache se disponível):', error.message);
+      } finally {
+        // Garante que o loading saia, mesmo que tudo falhe 
+        // (o componente retornará null se events estiver vazio, que é o esperado)
+        setLoading(false);
       }
 
-      // 2. Buscar localização do usuário
+      // 3. Buscar localização do usuário (independente dos eventos)
       try {
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -41,8 +59,6 @@ export default function FeaturedEventsCarousel({ navigation }) {
         }
       } catch (error) {
         console.log('Erro ao obter localização no carousel:', error);
-      } finally {
-        setLoading(false);
       }
     };
     init();
@@ -94,7 +110,6 @@ export default function FeaturedEventsCarousel({ navigation }) {
         {events.map((item) => {
           const imagemCap = item.imagem || item.imagens?.[0] || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=400';
           
-          // Cálculo dinâmico da distância
           let distText = null;
           if (userLocation && item.latitude && item.longitude) {
             const lat = parseFloat(item.latitude);
@@ -148,7 +163,6 @@ export default function FeaturedEventsCarousel({ navigation }) {
                   </View>
                 )}
 
-                {/* Exibição da Distância (se disponível) */}
                 {distText && (
                   <View style={styles.infoRow}>
                     <Ionicons name="navigate" size={14} color="#0ea5e9" />

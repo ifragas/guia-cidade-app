@@ -17,6 +17,9 @@ const DEVIATION_THRESHOLD = 20;
 const TIMEOUT_HTML = 9000;
 const TIMEOUT_MAPA = 20000;
 
+const MIN_MOVEMENT_METERS = 3;
+const MAX_MOVEMENT_INTERVAL_MS = 15000;
+
 const LOG = '[MAPA-OFFLINE][RN]';
 const log = (...a) => console.log(LOG, ...a);
 const logErro = (...a) => console.error(LOG, ...a);
@@ -54,6 +57,10 @@ export default function OfflineMapCard({
   const watchdogHtmlRef = useRef(null);
   const watchdogMapaRef = useRef(null);
 
+  const posAnteriorRef = useRef(null);
+  const timestampAnteriorRef = useRef(0);
+  const bearingCalculadoRef = useRef(0);
+
   const destLat = Number(latitude);
   const destLon = Number(longitude);
   const hasValidCoords =
@@ -62,8 +69,6 @@ export default function OfflineMapCard({
 
   const ROUTE_STORAGE_KEY = `rota_salva_${nome?.replace(/\s+/g, '_')}_${destLat}_${destLon}`;
   const CHAVE_MAPA = useMemo(() => chavePacote(nome, destLat, destLon), [nome, destLat, destLon]);
-  
-  // ✅ CORREÇÃO VISUAL: Fundo neutro bege (padrão OSM/Liberty) evita flash escuro
   const corFundo = '#e9e5dd'; 
 
   const safeJson = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
@@ -88,30 +93,16 @@ export default function OfflineMapCard({
     );
   }, []);
 
-  /* ---------------- conectividade ---------------- */
-
   useEffect(() => {
     const aplicar = (state) => {
-      // ✅ CORREÇÃO: Considera isInternetReachable para evitar falsos positivos
-      // Se isConnected=true mas isInternetReachable=false, estamos offline
-      const offline = state.isConnected === false || 
-                     (state.isInternetReachable === false);
-      
-      log('Conexão:', { 
-        connected: state.isConnected, 
-        reachable: state.isInternetReachable, 
-        tipo: state.type, 
-        offline 
-      });
+      const offline = state.isConnected === false || (state.isInternetReachable === false);
+      log('Conexão:', { connected: state.isConnected, reachable: state.isInternetReachable, tipo: state.type, offline });
       setIsOffline(offline);
     };
-    
     const off = NetInfo.addEventListener(aplicar);
     NetInfo.fetch().then(aplicar).catch(() => {});
     return () => off();
   }, []);
-
-  /* ---------------- biblioteca ---------------- */
 
   useEffect(() => {
     let vivo = true;
@@ -131,8 +122,6 @@ export default function OfflineMapCard({
     return () => { vivo = false; };
   }, []);
 
-  /* ---------------- ruas legadas ---------------- */
-
   useEffect(() => {
     (async () => {
       try {
@@ -145,8 +134,6 @@ export default function OfflineMapCard({
       } catch (e) { /* opcional */ }
     })();
   }, []);
-
-  /* ---------------- rota salva ---------------- */
 
   useEffect(() => {
     let vivo = true;
@@ -162,8 +149,6 @@ export default function OfflineMapCard({
     })();
     return () => { vivo = false; };
   }, [ROUTE_STORAGE_KEY]);
-
-  /* ---------------- pacote ---------------- */
 
   const verificarPacote = useCallback(async () => {
     setPacoteVerificado(false);
@@ -196,8 +181,6 @@ export default function OfflineMapCard({
     if (locationSubscription.current) locationSubscription.current.remove();
     if (headingSubscription.current) headingSubscription.current.remove();
   }, [limparTimers, limparWatchdogs]);
-
-  /* ---------------- boot ---------------- */
 
   const iniciarMapaNoWebView = useCallback(() => {
     if (!webViewRef.current) { logErro('WebView indisponível.'); return; }
@@ -243,8 +226,6 @@ export default function OfflineMapCard({
     if (pacoteVerificado && htmlProntoRef.current && !mapReady) iniciarMapaNoWebView();
   }, [pacoteVerificado, mapReady, iniciarMapaNoWebView]);
 
-  /* ---------------- rota ---------------- */
-
   const reaplicarRotaPendente = useCallback(() => {
     const p = rotaPendenteRef.current;
     if (!p || !webViewRef.current) return;
@@ -261,20 +242,16 @@ export default function OfflineMapCard({
     if (u) {
       webViewRef.current.injectJavaScript(
         'if(typeof window.atualizarPosicaoUsuario==="function"){' +
-        'window.atualizarPosicaoUsuario(' + u.latitude + ',' + u.longitude + ',' + currentHeading.current + ');}' +
+        'window.atualizarPosicaoUsuario(' + u.latitude + ',' + u.longitude + ',' + currentHeading.current + ', 15);}' +
         'true;'
       );
     }
   }, [destLat, destLon]);
 
-    /* ---------------- geometria CORRIGIDA ---------------- */
-
   const distanceToSegment = useCallback((pLat, pLon, aLat, aLon, bLat, bLon) => {
-    // Fator de conversão aproximado: 1 grau ≈ 111km na latitude média
     const latMedia = (aLat + bLat + pLat) / 3;
     const cosLat = Math.cos((latMedia * Math.PI) / 180);
     
-    // Converte para coordenadas locais em metros
     const px = pLon * cosLat * 111320;
     const py = pLat * 111320;
     const ax = aLon * cosLat * 111320;
@@ -286,21 +263,15 @@ export default function OfflineMapCard({
     const dy = by - ay;
     const segLenSq = dx * dx + dy * dy;
 
-    // Se o segmento for muito curto, usa distância direta ao ponto A
     if (segLenSq < 0.001) {
       const ddx = px - ax;
       const ddy = py - ay;
       return Math.sqrt(ddx * ddx + ddy * ddy);
     }
 
-    // Projeção do ponto P sobre o segmento AB
     const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / segLenSq));
-    
-    // Ponto projetado
     const projX = ax + t * dx;
     const projY = ay + t * dy;
-    
-    // Distância perpendicular em metros
     const ddx = px - projX;
     const ddy = py - projY;
     return Math.sqrt(ddx * ddx + ddy * ddy);
@@ -316,43 +287,94 @@ export default function OfflineMapCard({
     return min <= DEVIATION_THRESHOLD;
   }, [distanceToSegment]);
 
-    /* ---------------- GPS ---------------- */
+  const calcularBearing = useCallback((lat1, lon1, lat2, lon2) => {
+    const toRad = (d) => (d * Math.PI) / 180;
+    const toDeg = (r) => (r * 180) / Math.PI;
+    const phi1 = toRad(lat1);
+    const phi2 = toRad(lat2);
+    const dLambda = toRad(lon2 - lon1);
+    const y = Math.sin(dLambda) * Math.cos(phi2);
+    const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
+    const theta = Math.atan2(y, x);
+    return (toDeg(theta) + 360) % 360;
+  }, []);
+
+  const distanciaEntrePontos = useCallback((lat1, lon1, lat2, lon2) => {
+    const R = 6371e3;
+    const f1 = (lat1 * Math.PI) / 180;
+    const f2 = (lat2 * Math.PI) / 180;
+    const df = ((lat2 - lat1) * Math.PI) / 180;
+    const dl = ((lon2 - lon1) * Math.PI) / 180;
+    const a = Math.sin(df / 2) ** 2 + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }, []);
 
   const iniciarRastreamento = useCallback(async (rotaCoordinates) => {
     if (locationSubscription.current) locationSubscription.current.remove();
     if (headingSubscription.current) headingSubscription.current.remove();
 
+    posAnteriorRef.current = null;
+    timestampAnteriorRef.current = 0;
+
     try {
+      // ✅ CORREÇÃO FLUIDEZ: timeInterval baixo e distanceInterval 0 para updates constantes baseados em tempo
       locationSubscription.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 3000, distanceInterval: 5 },
+        { 
+          accuracy: Location.Accuracy.High,
+          timeInterval: 200,    
+          distanceInterval: 0   
+        },
         (location) => {
           const lat = location.coords.latitude;
           const lon = location.coords.longitude;
           
-          // ✅ CORREÇÃO: Ignora leituras com precisão muito baixa (>40m)
-          // Isso evita alertas falsos quando o GPS está "passeando"
           if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
           if (location.coords.accuracy > 40) {
             log('GPS impreciso, ignorando leitura:', location.coords.accuracy, 'm');
             return;
           }
 
+          const agora = Date.now();
+          let headingParaUsar = currentHeading.current;
+
+          const anterior = posAnteriorRef.current;
+          if (anterior) {
+            const dist = distanciaEntrePontos(anterior.lat, anterior.lon, lat, lon);
+            const tempoDecorr = agora - timestampAnteriorRef.current;
+
+            if (dist >= MIN_MOVEMENT_METERS && tempoDecorr <= MAX_MOVEMENT_INTERVAL_MS && tempoDecorr > 0) {
+              const bearingNovo = calcularBearing(anterior.lat, anterior.lon, lat, lon);
+              const anteriorBearing = bearingCalculadoRef.current;
+              let diff = bearingNovo - anteriorBearing;
+              if (diff > 180) diff -= 360;
+              if (diff < -180) diff += 360;
+              const suavizado = (anteriorBearing + diff * 0.5 + 360) % 360;
+              bearingCalculadoRef.current = suavizado;
+              headingParaUsar = suavizado;
+            }
+          }
+
+          posAnteriorRef.current = { lat, lon };
+          timestampAnteriorRef.current = agora;
+
           const usuario = { latitude: lat, longitude: lon };
           ultimaPosRef.current = usuario;
           setUserLocation(usuario);
 
           if (rotaCoordinates && rotaCoordinates.length > 0) {
-            const dentro = checkDeviation(lat, lon, rotaCoordinates);
-            
-            // Ajuste dinâmico do threshold baseado na precisão atual
-            // Se o GPS tem 15m de erro, não faz sentido alertar com 20m de tolerância
             const thresholdDinamico = Math.max(DEVIATION_THRESHOLD, location.coords.accuracy * 1.5);
-            
-            if (!dentro && isOnRouteRef.current) {
+            let minDist = Infinity;
+            for (let i = 0; i < rotaCoordinates.length - 1; i++) {
+              const d = distanceToSegment(lat, lon, rotaCoordinates[i][1], rotaCoordinates[i][0], rotaCoordinates[i + 1][1], rotaCoordinates[i + 1][0]);
+              if (d < minDist) minDist = d;
+            }
+            const dentroDinamico = minDist <= thresholdDinamico;
+
+            if (!dentroDinamico && isOnRouteRef.current) {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               isOnRouteRef.current = false;
               setIsOnRoute(false);
-            } else if (dentro && !isOnRouteRef.current) {
+            } else if (dentroDinamico && !isOnRouteRef.current) {
               isOnRouteRef.current = true;
               setIsOnRoute(true);
             }
@@ -360,7 +382,7 @@ export default function OfflineMapCard({
 
           webViewRef.current?.injectJavaScript(
             'if(typeof window.atualizarPosicaoUsuario==="function"){' +
-            'window.atualizarPosicaoUsuario(' + lat + ',' + lon + ',' + currentHeading.current + ');}' +
+            'window.atualizarPosicaoUsuario(' + lat + ',' + lon + ',' + headingParaUsar + ',' + location.coords.accuracy + ');}' +
             'true;'
           );
         }
@@ -368,11 +390,23 @@ export default function OfflineMapCard({
 
       headingSubscription.current = await Location.watchHeadingAsync((h) => {
         currentHeading.current = h.trueHeading || 0;
-        webViewRef.current?.injectJavaScript(
-          'if(typeof window.atualizarDirecaoUsuario==="function"){' +
-          'window.atualizarDirecaoUsuario(' + currentHeading.current + ');}' +
-          'true;'
-        );
+        const agora = Date.now();
+        const anterior = posAnteriorRef.current;
+        let parado = true;
+        if (anterior && timestampAnteriorRef.current > 0) {
+          const tempoDecorr = agora - timestampAnteriorRef.current;
+          if (tempoDecorr < MAX_MOVEMENT_INTERVAL_MS) {
+            parado = false;
+          }
+        }
+        // ✅ Envia heading da bússola quando parado para girar a lanterna
+        if (parado) {
+          webViewRef.current?.injectJavaScript(
+            'if(typeof window.atualizarDirecaoUsuario==="function"){' +
+            'window.atualizarDirecaoUsuario(' + currentHeading.current + ');}' +
+            'true;'
+          );
+        }
       });
 
       setIsTracking(true);
@@ -380,8 +414,7 @@ export default function OfflineMapCard({
       logErro('Erro no rastreamento:', error.message);
       setMapError('Erro ao iniciar rastreamento GPS.');
     }
-  }, [checkDeviation]);
-  /* ---------------- download ---------------- */
+  }, [checkDeviation, distanceToSegment, calcularBearing, distanciaEntrePontos]);
 
   const baixarMapaOffline = useCallback(async (rotaCoords, { forcar = false } = {}) => {
     if (isOffline) {
@@ -389,9 +422,7 @@ export default function OfflineMapCard({
       return false;
     }
 
-    const coords = (Array.isArray(rotaCoords) && rotaCoords.length > 1)
-      ? rotaCoords : [[destLon, destLat]];
-
+    const coords = (Array.isArray(rotaCoords) && rotaCoords.length > 1) ? rotaCoords : [[destLon, destLat]];
     if (forcar) await removerPacote(CHAVE_MAPA);
 
     setDownload({ fase: 'tiles', pct: 0, detalhe: 'Preparando...' });
@@ -406,16 +437,11 @@ export default function OfflineMapCard({
         pacoteRef.current = null;
         setPacotePronto(false);
         setPacoteVerificado(true);
-        Alert.alert(
-          'Mapa offline incompleto',
-          `Tiles: ${pkg?.stats?.tiles || 0}/${pkg?.stats?.totalTiles || 0}\n` +
-          `Motivo: ${pkg?.stats?.motivoIncompleto || 'desconhecido'}`
-        );
+        Alert.alert('Mapa offline incompleto', `Tiles: ${pkg?.stats?.tiles || 0}/${pkg?.stats?.totalTiles || 0}\nMotivo: ${pkg?.stats?.motivoIncompleto || 'desconhecido'}`);
         return false;
       }
 
       await verificarPacote();
-
       htmlProntoRef.current = false;
       limparWatchdogs();
       setMapReady(false);
@@ -434,17 +460,11 @@ export default function OfflineMapCard({
   }, [isOffline, destLat, destLon, CHAVE_MAPA, corFundo, limparWatchdogs, verificarPacote]);
 
   const confirmarRebaixar = useCallback(() => {
-    Alert.alert(
-      'Rebaixar mapa offline',
-      'O pacote atual será substituído por um novo download desta região. Use Wi-Fi.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Rebaixar', onPress: () => baixarMapaOffline(savedRouteCoords, { forcar: true }) }
-      ]
-    );
+    Alert.alert('Rebaixar mapa offline', 'O pacote atual será substituído por um novo download desta região. Use Wi-Fi.', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Rebaixar', onPress: () => baixarMapaOffline(savedRouteCoords, { forcar: true }) }
+    ]);
   }, [baixarMapaOffline, savedRouteCoords]);
-
-  /* ---------------- traçar rota ---------------- */
 
   const obterLocalizacaoEDesenharRota = useCallback(async () => {
     setLoadingLocation(true);
@@ -467,9 +487,7 @@ export default function OfflineMapCard({
 
       if (!isOffline) {
         try {
-          const url =
-            `https://router.project-osrm.org/route/v1/driving/` +
-            `${lon},${lat};${destLon},${destLat}?overview=full&geometries=geojson`;
+          const url = `https://router.project-osrm.org/route/v1/driving/${lon},${lat};${destLon},${destLat}?overview=full&geometries=geojson`;
           const r = await fetch(url);
           if (!r.ok) throw new Error(`OSRM HTTP ${r.status}`);
           const data = await r.json();
@@ -484,9 +502,7 @@ export default function OfflineMapCard({
 
       if (!rotaCoordinates && savedRouteCoords) rotaCoordinates = savedRouteCoords;
 
-      rotaPendenteRef.current = {
-        userLat: lat, userLon: lon, offline: isOffline, coords: rotaCoordinates
-      };
+      rotaPendenteRef.current = { userLat: lat, userLon: lon, offline: isOffline, coords: rotaCoordinates };
 
       await iniciarRastreamento(rotaCoordinates);
       reaplicarRotaPendente();
@@ -506,10 +522,7 @@ export default function OfflineMapCard({
     } finally {
       setLoadingLocation(false);
     }
-  }, [destLat, destLon, isOffline, savedRouteCoords, ROUTE_STORAGE_KEY,
-      iniciarRastreamento, reaplicarRotaPendente, pacoteCobreRota, baixarMapaOffline]);
-
-  /* ---------------- HTML ---------------- */
+  }, [destLat, destLon, isOffline, savedRouteCoords, ROUTE_STORAGE_KEY, iniciarRastreamento, reaplicarRotaPendente, pacoteCobreRota, baixarMapaOffline]);
 
   const mapHtml = useMemo(() => {
     if (!biblioteca) return null;
@@ -529,7 +542,6 @@ html,body,#map{width:100%;height:100%;margin:0;padding:0;overflow:hidden;backgro
 .flashlight-beam{position:absolute;top:0;left:50%;transform:translateX(-50%);width:28px;height:35px;clip-path:polygon(50% 100%,0% 0%,100% 0%);background:linear-gradient(to top,rgba(0,122,255,.5) 0%,rgba(0,122,255,0) 100%)}
 .user-marker{width:18px;height:18px;border-radius:50%;background:#007AFF;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2}
 .maplibregl-ctrl-logo{display:none!important}
-/* ✅ ATRIBUIÇÃO OBRIGATÓRIA OPENFREEMAP/OSM */
 .osm-attrib{position:absolute;bottom:8px;right:8px;z-index:1000;background:rgba(255,255,255,0.85);padding:4px 8px;border-radius:4px;font:11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#333;box-shadow:0 1px 3px rgba(0,0,0,0.2);max-width:280px;text-align:right;pointer-events:auto;}
 .osm-attrib a{color:#0066cc;text-decoration:none;}
 .osm-attrib a:hover{text-decoration:underline;}
@@ -537,7 +549,6 @@ html,body,#map{width:100%;height:100%;margin:0;padding:0;overflow:hidden;backgro
 </head>
 <body>
 <div id="map"></div>
-<!-- ✅ WIDGET DE ATRIBUIÇÃO VISÍVEL -->
 <div class="osm-attrib">© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors<br/>Tiles © <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a></div>
 <script>${biblioteca.pako || ''}</script>
 <script>${biblioteca.js}</script>
@@ -558,9 +569,17 @@ var map=null,markerUsuario=null,beamRotatorElement=null;
 var currentRotation=0,targetRotation=0,animationFrameId=null;
 var rotaAtual=null,mapaPronto=false,modoAtual='online';
 var contadorTiles=0,tilesAusentes=[],errosMapa=[],inspecoes=[];
+var tilesRenderizados=0;
+var ultimaAcuracia=15;
+var ultimoPosUsuario=null;
 
-// ✅ CONTADOR DE TILES RENDERIZADOS PARA PRONTIDÃO REAL
-var tilesRenderizados = 0;
+var animState = {
+  currentLat: 0, currentLon: 0,
+  targetLat: 0, targetLon: 0,
+  currentRot: 0, targetRot: 0,
+  isAnimating: false,
+  accuracy: 15
+};
 
 function postMessage(tipo,msg){
   try{if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(JSON.stringify({tipo:tipo,msg:msg}));}}catch(e){}
@@ -626,28 +645,17 @@ function inspecionarMVT(bytes){
 
 function prepararTile(chave,b64){
   if(window.__TILES_RAW[chave]){return window.__TILES_RAW[chave];}
-
   var bytes=base64ParaBytes(b64);
   var gz=bytes.length>2&&bytes[0]===0x1f&&bytes[1]===0x8b;
   var saida=bytes;
-
   if(gz&&typeof pako!=='undefined'&&pako.inflate){
     try{saida=pako.inflate(bytes);}catch(e){logErro('Falha ao inflar tile.',{chave:chave,erro:e.message});}
   }
-
   if(inspecoes.length<3){
     var insp=inspecionarMVT(saida);
     inspecoes.push(1);
-    logDiag('INSPEÇÃO DE TILE.',{
-      chave:chave,
-      bytes:saida.length,
-      gzipado:gz,
-      hex:hexPrimeiros(saida,16),
-      camadas:insp.camadas,
-      erroParse:insp.erro||null
-    });
+    logDiag('INSPEÇÃO DE TILE.',{chave:chave,bytes:saida.length,gzipado:gz,hex:hexPrimeiros(saida,16),camadas:insp.camadas,erroParse:insp.erro||null});
   }
-
   var buffer=saida.buffer.slice(saida.byteOffset,saida.byteOffset+saida.byteLength);
   window.__TILES_RAW[chave]=buffer;
   return buffer;
@@ -665,73 +673,41 @@ function chaveSemQuery(url,prefixo){
   return s;
 }
 
-// ✅ PROTOCOLO COMPATÍVEL V3/V4 COM CLONAGEM DE BUFFER
 function registrarProtocolosOffline() {
   if (window.__protocolosOfflineRegistrados) return;
-  if (typeof maplibregl.addProtocol !== 'function') {
-    throw new Error('maplibregl.addProtocol indisponível.');
-  }
-
-  const isV4Plus = maplibregl.version && 
-                   parseInt(maplibregl.version.split('.')[0]) >= 4;
+  if (typeof maplibregl.addProtocol !== 'function') throw new Error('maplibregl.addProtocol indisponível.');
+  const isV4Plus = maplibregl.version && parseInt(maplibregl.version.split('.')[0]) >= 4;
 
   maplibregl.addProtocol('offline', function(params, callback) {
     var chave = chaveSemQuery(params.url, 'offline://');
     contadorTiles++;
     var b64 = window.__TILES[chave];
-
     if (!b64) {
       if (tilesAusentes.length < 40) tilesAusentes.push(chave);
       var emptyData = new ArrayBuffer(0);
-      if (isV4Plus) {
-        return Promise.resolve({ data: emptyData });
-      } else {
-        callback(null, emptyData, null, null);
-        return;
-      }
+      return isV4Plus ? Promise.resolve({ data: emptyData }) : (callback(null, emptyData, null, null), undefined);
     }
-
     try {
       var data = prepararTile(chave, b64);
-      
-      // BUG SECUNDÁRIO: Clone o buffer antes de entregar ao worker
-      // O MapLibre v3 transfere ownership, zerando o original
       var clonedData = data.slice(0);
-      
-      if (contadorTiles <= 4) {
-        logDiag('Tile offline servido.', { chave: chave, bytes: clonedData.byteLength });
-      }
-      
-      if (isV4Plus) {
-        return Promise.resolve({ data: clonedData });
-      } else {
-        callback(null, clonedData, null, null);
-      }
+      if (contadorTiles <= 4) logDiag('Tile offline servido.', { chave: chave, bytes: clonedData.byteLength });
+      return isV4Plus ? Promise.resolve({ data: clonedData }) : (callback(null, clonedData, null, null), undefined);
     } catch (e) {
       logErro('Erro ao preparar tile.', { chave: chave, erro: e.message });
       var errData = new ArrayBuffer(0);
-      if (isV4Plus) {
-        return Promise.resolve({ data: errData });
-      } else {
-        callback(null, errData, null, null);
-      }
+      return isV4Plus ? Promise.resolve({ data: errData }) : (callback(null, errData, null, null), undefined);
     }
   });
 
-  // Mesmo padrão para glyphs
   maplibregl.addProtocol('offline-glyphs', function(params, callback) {
     var chave;
     try { chave = decodeURIComponent(chaveSemQuery(params.url, 'offline-glyphs://')); }
     catch(e) { chave = chaveSemQuery(params.url, 'offline-glyphs://'); }
-    
     var b64 = window.__GLYPHS[chave];
     if (!b64) {
       var emptyGlyph = new ArrayBuffer(0);
-      if (isV4Plus) return Promise.resolve({ data: emptyGlyph });
-      callback(null, emptyGlyph, null, null);
-      return;
+      return isV4Plus ? Promise.resolve({ data: emptyGlyph }) : (callback(null, emptyGlyph, null, null), undefined);
     }
-
     try {
       var bytes = base64ParaBytes(b64);
       var glyphData;
@@ -741,35 +717,22 @@ function registrarProtocolosOffline() {
       } else {
         glyphData = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
       }
-      
-      // Clone também aqui
       var clonedGlyph = glyphData.slice(0);
-      
-      if (isV4Plus) {
-        return Promise.resolve({ data: clonedGlyph });
-      } else {
-        callback(null, clonedGlyph, null, null);
-      }
+      return isV4Plus ? Promise.resolve({ data: clonedGlyph }) : (callback(null, clonedGlyph, null, null), undefined);
     } catch (e) {
       var errGlyph = new ArrayBuffer(0);
-      if (isV4Plus) return Promise.resolve({ data: errGlyph });
-      callback(null, errGlyph, null, null);
+      return isV4Plus ? Promise.resolve({ data: errGlyph }) : (callback(null, errGlyph, null, null), undefined);
     }
   });
 
   window.__protocolosOfflineRegistrados = true;
-  logDiag('Protocolos offline registrados.', { 
-    versao: maplibregl.version || 'desconhecida',
-    modo: isV4Plus ? 'v4+' : 'v3',
-    pako: (typeof pako !== 'undefined')
-  });
+  logDiag('Protocolos offline registrados.', { versao: maplibregl.version || 'desconhecida', modo: isV4Plus ? 'v4+' : 'v3', pako: (typeof pako !== 'undefined') });
 }
 
 function blindarStyle(estilo){
-  if(!estilo||typeof estilo!=='object'){return estilo;}
+  if(!estilo||typeof estilo!=='object') return estilo;
   var s=JSON.parse(JSON.stringify(estilo));
-  if(s.sprite){delete s.sprite;}
-
+  if(s.sprite) delete s.sprite;
   var fontesOk={};
   for(var nome in (s.sources||{})){
     var src=s.sources[nome];
@@ -779,16 +742,15 @@ function blindarStyle(estilo){
       fontesOk[nome]=true;
     }
   }
-
   s.layers=(s.layers||[]).filter(function(l){
-    if(!l||!l.type){return false;}
-    if(l.type==='background'){return true;}
-    if(!fontesOk[l.source]){return false;}
+    if(!l||!l.type) return false;
+    if(l.type==='background') return true;
+    if(!fontesOk[l.source]) return false;
     if(l.type==='symbol'){
-      if(!s.glyphs||!l.layout){return false;}
-      for(var k in l.layout){if(k.indexOf('icon-')===0){delete l.layout[k];}}
-      if(!l.layout['text-field']){return false;}
-      if(l.paint){for(var p in l.paint){if(p.indexOf('icon-')===0){delete l.paint[p];}}}
+      if(!s.glyphs||!l.layout) return false;
+      for(var k in l.layout){if(k.indexOf('icon-')===0) delete l.layout[k];}
+      if(!l.layout['text-field']) return false;
+      if(l.paint){for(var p in l.paint){if(p.indexOf('icon-')===0) delete l.paint[p];}}
     }
     return true;
   });
@@ -801,34 +763,57 @@ function getShortestAngle(from,to){
 
 function aplicarRuas(){
   try{
-    if(!ruasCache.features||!ruasCache.features.length){return;}
-    if(map.getSource('ruas-offline')){return;}
+    if(!ruasCache.features||!ruasCache.features.length) return;
+    if(map.getSource('ruas-offline')) return;
     map.addSource('ruas-offline',{type:'geojson',data:ruasCache});
-    map.addLayer({id:'camada-ruas',type:'line',source:'ruas-offline',
-      paint:{'line-color':'#94a3b8','line-width':1.5,'line-opacity':0.7}});
+    map.addLayer({id:'camada-ruas',type:'line',source:'ruas-offline',paint:{'line-color':'#94a3b8','line-width':1.5,'line-opacity':0.7}});
   }catch(e){logErro('Erro ao adicionar ruas.',e.message);}
 }
 
 function reaplicarRota(){
   try{
-    if(!rotaAtual){return;}
+    if(!rotaAtual) return;
     var gj={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:rotaAtual.coords}};
     if(map.getSource('rota-source')){map.getSource('rota-source').setData(gj);return;}
     map.addSource('rota-source',{type:'geojson',data:gj});
-    map.addLayer({id:'rota-layer',type:'line',source:'rota-source',
-      layout:{'line-join':'round','line-cap':'round'},
-      paint:{'line-color':'#0066cc','line-width':6,
-        'line-dasharray':rotaAtual.tracejada?[2,2]:[1,0]}});
+    map.addLayer({id:'rota-layer',type:'line',source:'rota-source',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#0066cc','line-width':6,'line-dasharray':rotaAtual.tracejada?[2,2]:[1,0]}});
     logDiag('Rota desenhada.',{pontos:rotaAtual.coords.length});
   }catch(e){logErro('Erro ao desenhar rota.',e.message);}
 }
 
+function garantirCamadaPrecisao(){
+  try{
+    if(!map.getSource('precisao-source')){
+      map.addSource('precisao-source',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    }
+    if(!map.getLayer('precisao-fill')){
+      map.addLayer({
+        id:'precisao-fill',type:'circle',source:'precisao-source',
+        paint:{
+          'circle-radius':['interpolate',['linear'],['zoom'],10,3,14,12,16,40,18,120],
+          'circle-color':'#007AFF','circle-opacity':0.12,'circle-stroke-color':'#007AFF','circle-stroke-opacity':0.35,'circle-stroke-width':1
+        }
+      });
+    }
+  }catch(e){logErro('Erro camada precisão.',e.message);}
+}
+
+function atualizarCirculoPrecisao(lat,lon,acuracia){
+  try{
+    garantirCamadaPrecisao();
+    var src=map.getSource('precisao-source');
+    if(!src) return;
+    src.setData({type:'FeatureCollection',features:[{type:'Feature',properties:{acuracia:acuracia||15},geometry:{type:'Point',coordinates:[lon,lat]}}]});
+  }catch(e){logErro('Erro atualizar círculo.',e.message);}
+}
+
 function marcarPronto(origem){
-  if(mapaPronto){return;}
+  if(mapaPronto) return;
   mapaPronto=true;
   logDiag('Mapa liberado.',{origem:origem,modo:modoAtual,tilesRenderizados:tilesRenderizados});
   aplicarRuas();
   reaplicarRota();
+  garantirCamadaPrecisao();
   try{map.resize();map.triggerRepaint();}catch(e){}
   postMessage('pronto',modoAtual==='offline'?'offline':'online');
 }
@@ -845,142 +830,55 @@ function nudgesDeRender(){
 
 function diagnosticoPeriodico(attempt){
   setTimeout(function(){
-    if(!map){return;}
-    var info={
-      tentativa:attempt,
-      mapaPronto:mapaPronto,
-      styleLoaded:false,
-      tilesLoaded:false,
-      tilesServidos:contadorTiles,
-      tilesAusentes:tilesAusentes.length,
-      zoom:null,
-      featuresRenderizadas:null,
-      camadasNoStyle:null,
-      erros:errosMapa.length,
-      tilesRenderizados: tilesRenderizados
-    };
+    if(!map) return;
+    var info={tentativa:attempt,mapaPronto:mapaPronto,styleLoaded:false,tilesLoaded:false,tilesServidos:contadorTiles,tilesAusentes:tilesAusentes.length,zoom:null,featuresRenderizadas:null,camadasNoStyle:null,erros:errosMapa.length,tilesRenderizados:tilesRenderizados};
     try{info.styleLoaded=map.isStyleLoaded();}catch(e){}
     try{info.tilesLoaded=map.areTilesLoaded();}catch(e){}
     try{info.zoom=Number(map.getZoom().toFixed(2));}catch(e){}
     try{info.camadasNoStyle=map.getStyle().layers.length;}catch(e){}
     try{info.featuresRenderizadas=map.queryRenderedFeatures().length;}catch(e){}
     logDiag('Diagnóstico periódico.',info);
-    if(attempt<3){diagnosticoPeriodico(attempt+1);}
+    if(attempt<3) diagnosticoPeriodico(attempt+1);
   },attempt*2200);
 }
 
 window.__iniciarMapa=function(styleOffline,usarOffline){
   try{
-    logDiag('Inicializando MapLibre.',{
-      offlineAgora:offlineAgora,usarOffline:usarOffline,
-      tiles:Object.keys(window.__TILES).length,
-      pako:(typeof pako!=='undefined')
-    });
-
+    logDiag('Inicializando MapLibre.',{offlineAgora:offlineAgora,usarOffline:usarOffline,tiles:Object.keys(window.__TILES).length,pako:(typeof pako!=='undefined')});
     if(map){
       try{map.remove();}catch(e){}
       map=null;markerUsuario=null;beamRotatorElement=null;mapaPronto=false;
-      tilesRenderizados = 0; // ✅ RESET DO CONTADOR AO REINICIAR
+      tilesRenderizados=0;ultimoPosUsuario=null;
     }
-
     registrarProtocolosOffline();
-
     var estilo;
     if(usarOffline&&styleOffline){estilo=blindarStyle(styleOffline);modoAtual='offline';}
-    else if(offlineAgora){
-      estilo={version:8,sources:{},layers:[{id:'base',type:'background',paint:{'background-color':corFundo}}]};
-      modoAtual='online';
-    }else{estilo=styleOnline;modoAtual='online';}
-
-    logDiag('Estilo escolhido.',{
-      modo:modoAtual,
-      camadas:(estilo.layers||[]).length,
-      fontes:Object.keys(estilo.sources||{})
-    });
-
-    map=new maplibregl.Map({
-      container:'map',
-      style:estilo,
-      center:[destino.lon,destino.lat],
-      zoom:14.5,
-      maxZoom:17,
-      attributionControl:false,
-      fadeDuration:0
-    });
-
+    else if(offlineAgora){estilo={version:8,sources:{},layers:[{id:'base',type:'background',paint:{'background-color':corFundo}}]};modoAtual='online';}
+    else{estilo=styleOnline;modoAtual='online';}
+    logDiag('Estilo escolhido.',{modo:modoAtual,camadas:(estilo.layers||[]).length,fontes:Object.keys(estilo.sources||{})});
+    map=new maplibregl.Map({container:'map',style:estilo,center:[destino.lon,destino.lat],zoom:14.5,maxZoom:17,attributionControl:false,fadeDuration:0});
     var elDest=document.createElement('div');
     elDest.className='destination-marker';
     elDest.textContent='📍';
-    new maplibregl.Marker({element:elDest,anchor:'bottom'})
-      .setLngLat([destino.lon,destino.lat])
-      .setPopup(new maplibregl.Popup({offset:20}).setText(nomeDestino))
-      .addTo(map);
-
-    // ✅ EVENTO DATA PARA CONTABILIZAR TILES RENDERIZADOS
+    new maplibregl.Marker({element:elDest,anchor:'bottom'}).setLngLat([destino.lon,destino.lat]).setPopup(new maplibregl.Popup({offset:20}).setText(nomeDestino)).addTo(map);
     map.on('data', function(ev) {
       if (ev.sourceId && ev.isSourceLoaded && ev.sourceDataType === 'content') {
         tilesRenderizados++;
         logDiag('Tile renderizado.', { sourceId: ev.sourceId, total: tilesRenderizados });
       }
     });
-
-    map.on('style.load',function(){
-      logDiag('Evento STYLE.LOAD.');
-      // ✅ SÓ LIBERA SE ESTIVER ONLINE OU JÁ TENHA TILES RENDERIZADOS
-      if (!usarOffline || tilesRenderizados > 0) {
-        marcarPronto('style.load');
-      } else {
-        logDiag('Aguardando tiles offline...');
-      }
-    });
-    
-    map.on('load',function(){
-      logDiag('Evento LOAD.',{tiles:contadorTiles});
-      if (!usarOffline || tilesRenderizados > 0) {
-        marcarPronto('load');
-      }
-    });
-    
-    map.on('idle',function(){
-      // ✅ IDLE SÓ LIBERA SE HOUVER TILES OU ESTIVER ONLINE
-      if (!usarOffline || tilesRenderizados > 0) {
-        marcarPronto('idle');
-      } else {
-        logDiag('Idle sem tiles, aguardando...');
-      }
-    });
-
-    map.on('sourcedata',function(ev){
-      if(ev.sourceId&&ev.isSourceLoaded&&ev.sourceDataType==='content'){
-        logDiag('Source carregada.',{sourceId:ev.sourceId});
-      }
-    });
-
-    map.on('error',function(ev){
-      var m=(ev&&ev.error&&ev.error.message)?ev.error.message:'Erro desconhecido';
-      if(errosMapa.length<30){errosMapa.push(m);}
-      if(errosMapa.length<=6){logErro('Erro MapLibre.',{mensagem:m,sourceId:ev.sourceId||null});}
-    });
-
-    // Fallback mantido para evitar travamento eterno
-    setTimeout(function(){
-      if(mapaPronto){return;}
-      var ok=false;
-      try{ok=Boolean(map.getStyle());}catch(e){}
-      if(ok){
-        logDiag('Fallback ativado após timeout.', { tilesRenderizados });
-        marcarPronto('fallback');
-      }
-    },2500);
-
+    map.on('style.load',function(){logDiag('Evento STYLE.LOAD.');if (!usarOffline || tilesRenderizados > 0) { marcarPronto('style.load'); } else { logDiag('Aguardando tiles offline...'); }});
+    map.on('load',function(){logDiag('Evento LOAD.',{tiles:contadorTiles});if (!usarOffline || tilesRenderizados > 0) { marcarPronto('load'); }});
+    map.on('idle',function(){if (!usarOffline || tilesRenderizados > 0) { marcarPronto('idle'); } else { logDiag('Idle sem tiles, aguardando...'); }});
+    map.on('sourcedata',function(ev){if(ev.sourceId&&ev.isSourceLoaded&&ev.sourceDataType==='content'){logDiag('Source carregada.',{sourceId:ev.sourceId});}});
+    map.on('error',function(ev){var m=(ev&&ev.error&&ev.error.message)?ev.error.message:'Erro desconhecido';if(errosMapa.length<30){errosMapa.push(m);}if(errosMapa.length<=6){logErro('Erro MapLibre.',{mensagem:m,sourceId:ev.sourceId||null});}});
+    setTimeout(function(){if(mapaPronto)return;var ok=false;try{ok=Boolean(map.getStyle());}catch(e){}if(ok){logDiag('Fallback ativado após timeout.', { tilesRenderizados });marcarPronto('fallback');}},2500);
     nudgesDeRender();
     diagnosticoPeriodico(1);
-
     var c=map.getContainer();
     c.addEventListener('touchstart',function(){postMessage('mapTouchStart');},{passive:true});
     c.addEventListener('touchend',function(){postMessage('mapTouchEnd');},{passive:true});
     c.addEventListener('touchcancel',function(){postMessage('mapTouchEnd');},{passive:true});
-
   }catch(error){
     logErro('Falha ao iniciar mapa.',{mensagem:error.message});
     postMessage('erro','Falha ao iniciar o mapa: '+error.message);
@@ -988,58 +886,120 @@ window.__iniciarMapa=function(styleOffline,usarOffline){
   return true;
 };
 
-window.atualizarPosicaoUsuario=function(userLat,userLon,userHeading){
-  if(!map||!mapaPronto){return;}
-  if(!Number.isFinite(userLat)||!Number.isFinite(userLon)){return;}
-  try{
-    if(markerUsuario){
-      markerUsuario.setLngLat([userLon,userLat]);
-      if(beamRotatorElement){
-        currentRotation=userHeading;
-        beamRotatorElement.style.transform='rotate('+userHeading+'deg)';
-      }
-      return;
-    }
-    var box=document.createElement('div');box.className='user-marker-container';
-    var rot=document.createElement('div');rot.className='beam-rotator';
-    var beam=document.createElement('div');beam.className='flashlight-beam';
-    rot.appendChild(beam);
-    var dot=document.createElement('div');dot.className='user-marker';
-    box.appendChild(rot);box.appendChild(dot);
-    beamRotatorElement=rot;
-    markerUsuario=new maplibregl.Marker({element:box,anchor:'center'})
-      .setLngLat([userLon,userLat]).addTo(map);
-    currentRotation=userHeading;
-    rot.style.transform='rotate('+userHeading+'deg)';
-  }catch(e){logErro('Erro ao atualizar posição.',e.message);}
-};
+window.atualizarPosicaoUsuario = function(newLat, newLon, newHeading, accuracy) {
+  if (!map || !mapaPronto) return;
+  if (!Number.isFinite(newLat) || !Number.isFinite(newLon)) return;
 
-window.atualizarDirecaoUsuario=function(userHeading){
-  targetRotation=userHeading;
-  if(animationFrameId){cancelAnimationFrame(animationFrameId);}
-  function animate(){
-    if(!beamRotatorElement){return;}
-    var alvo=getShortestAngle(currentRotation,targetRotation);
-    currentRotation+=(alvo-currentRotation)*0.2;
-    beamRotatorElement.style.transform='rotate('+currentRotation+'deg)';
-    if(Math.abs(alvo-currentRotation)>0.5){animationFrameId=requestAnimationFrame(animate);}
+  animState.targetLat = newLat;
+  animState.targetLon = newLon;
+  animState.targetRot = newHeading;
+  animState.accuracy = (typeof accuracy === 'number' && accuracy > 0) ? accuracy : 15;
+  ultimoPosUsuario = { lat: newLat, lon: newLon };
+
+  if (animState.currentLat === 0 && animState.currentLon === 0) {
+    animState.currentLat = newLat;
+    animState.currentLon = newLon;
+    animState.currentRot = newHeading;
   }
-  animationFrameId=requestAnimationFrame(animate);
+
+  if (!markerUsuario) {
+    var box = document.createElement('div');
+    box.className = 'user-marker-container';
+    var rot = document.createElement('div');
+    rot.className = 'beam-rotator';
+    var beam = document.createElement('div');
+    beam.className = 'flashlight-beam';
+    rot.appendChild(beam);
+    var dot = document.createElement('div');
+    dot.className = 'user-marker';
+    box.appendChild(rot);
+    box.appendChild(dot);
+    beamRotatorElement = rot;
+    markerUsuario = new maplibregl.Marker({ element: box, anchor: 'center' })
+      .setLngLat([animState.currentLon, animState.currentLat])
+      .addTo(map);
+    currentRotation = newHeading;
+    rot.style.transform = 'rotate(' + newHeading + 'deg)';
+    atualizarCirculoPrecisao(animState.currentLat, animState.currentLon, animState.accuracy);
+  }
+
+  if (!animState.isAnimating) {
+    animState.isAnimating = true;
+    requestAnimationFrame(smoothAnimate);
+  }
 };
 
-window.calcularExibirRota=function(userLat,userLon,dLat,dLon,offlineMode,savedRoute){
-  if(!map||!mapaPronto){logErro('Rota antes do mapa pronto.');return false;}
-  var coords=(Array.isArray(savedRoute)&&savedRoute.length>1)
-    ?savedRoute:[[userLon,userLat],[dLon,dLat]];
-  rotaAtual={coords:coords,tracejada:Boolean(offlineMode&&(!savedRoute||savedRoute.length<2))};
-  window.atualizarPosicaoUsuario(userLat,userLon,0);
+// ✅ NOVO: Atualiza a rotação quando parado (via bússola)
+window.atualizarDirecaoUsuario = function(newHeading) {
+  if (!map || !mapaPronto) return;
+  animState.targetRot = newHeading;
+  if (!animState.isAnimating) {
+    animState.isAnimating = true;
+    requestAnimationFrame(smoothAnimate);
+  }
+};
+
+function smoothAnimate() {
+  if (!map || !mapaPronto || !markerUsuario) {
+    animState.isAnimating = false;
+    return;
+  }
+
+  // ✅ FATORES AJUSTADOS: 0.5 dá resposta rápida sem ser "teleporte", 0.2 suaviza a rotação
+  var posFactor = 0.5;  
+  var rotFactor = 0.2; 
+
+  var dLat = animState.targetLat - animState.currentLat;
+  var dLon = animState.targetLon - animState.currentLon;
+
+  if (Math.abs(dLat) < 0.000005 && Math.abs(dLon) < 0.000005) {
+    animState.currentLat = animState.targetLat;
+    animState.currentLon = animState.targetLon;
+  } else {
+    animState.currentLat += dLat * posFactor;
+    animState.currentLon += dLon * posFactor;
+  }
+
+  var diff = animState.targetRot - animState.currentRot;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  animState.currentRot += diff * rotFactor;
+
+  markerUsuario.setLngLat([animState.currentLon, animState.currentLat]);
+  
+  if (beamRotatorElement) {
+    beamRotatorElement.style.transform = 'rotate(' + animState.currentRot + 'deg)';
+  }
+  
+  atualizarCirculoPrecisao(animState.currentLat, animState.currentLon, animState.accuracy);
+
+  if (Math.abs(dLat) > 0.000005 || Math.abs(dLon) > 0.000005 || Math.abs(diff) > 0.5) {
+    requestAnimationFrame(smoothAnimate);
+  } else {
+    animState.isAnimating = false;
+  }
+}
+
+window.calcularExibirRota = function(userLat, userLon, dLat, dLon, offlineMode, savedRoute) {
+  if (!map || !mapaPronto) { logErro('Rota antes do mapa pronto.'); return false; }
+  var coords = (Array.isArray(savedRoute) && savedRoute.length > 1) ? savedRoute : [[userLon, userLat], [dLon, dLat]];
+  rotaAtual = { coords: coords, tracejada: Boolean(offlineMode && (!savedRoute || savedRoute.length < 2)) };
+  
+  animState.currentLat = userLat;
+  animState.currentLon = userLon;
+  animState.targetLat = userLat;
+  animState.targetLon = userLon;
+  animState.targetRot = 0;
+  animState.currentRot = 0;
+  
+  window.atualizarPosicaoUsuario(userLat, userLon, 0, 15);
   reaplicarRota();
-  try{
-    var b=new maplibregl.LngLatBounds();
-    coords.forEach(function(p){b.extend(p);});
-    map.fitBounds(b,{padding:60,maxZoom:15,duration:800});
-  }catch(e){logErro('Erro no fitBounds.',e.message);}
-  postMessage('rota',offlineMode?((savedRoute&&savedRoute.length>1)?'offline_salva':'offline_reta'):'online');
+  try {
+    var b = new maplibregl.LngLatBounds();
+    coords.forEach(function(p) { b.extend(p); });
+    map.fitBounds(b, { padding: 60, maxZoom: 15, duration: 800 });
+  } catch(e) { logErro('Erro no fitBounds.', e.message); }
+  postMessage('rota', offlineMode ? ((savedRoute && savedRoute.length > 1) ? 'offline_salva' : 'offline_reta') : 'online');
   return true;
 };
 
@@ -1069,22 +1029,17 @@ postMessage('htmlPronto');
     return () => { if (watchdogHtmlRef.current) clearTimeout(watchdogHtmlRef.current); };
   }, [webviewSource, geracao]);
 
-  /* ---------------- mensagens ---------------- */
-
   const receberMensagem = useCallback((event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-
       if (data.tipo === 'diag') { log('[WV]', data.msg?.mensagem, data.msg?.dados || ''); return; }
       if (data.tipo === 'diagErro') { logErro('[WV]', data.msg?.mensagem, data.msg?.dados || ''); return; }
-
       if (data.tipo === 'htmlPronto') {
         htmlProntoRef.current = true;
         if (watchdogHtmlRef.current) { clearTimeout(watchdogHtmlRef.current); watchdogHtmlRef.current = null; }
         iniciarMapaNoWebView();
         return;
       }
-
       if (data.tipo === 'pronto') {
         log('Mapa pronto:', data.msg);
         if (watchdogMapaRef.current) { clearTimeout(watchdogMapaRef.current); watchdogMapaRef.current = null; }
@@ -1094,7 +1049,6 @@ postMessage('htmlPronto');
         setTimeout(reaplicarRotaPendente, 160);
         return;
       }
-
       if (data.tipo === 'erro') { logErro('Erro do WebView:', data.msg); setMapError(data.msg); return; }
       if (data.tipo === 'rota') { log('Rota:', data.msg); return; }
       if (data.tipo === 'mapTouchStart' && onMapInteractionChange) { onMapInteractionChange(true); return; }

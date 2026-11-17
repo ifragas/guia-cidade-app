@@ -132,8 +132,9 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const displayNome = nome || titulo || 'Detalhes';
   const isServico = tipo?.toLowerCase() === 'servicos';
+  const isEvento = tipo?.toLowerCase().includes('evento');
   const is24h = funcionamento24h === true || funcionamento24h === 'true' || sempreAberto === true;
-  const ehSempreAberto = sempreAberto || is24h;
+  const ehSempreAberto = sempreAberto || is24h || (typeof horario === 'string' && horario.toLowerCase().includes('sempre'));
 
   let lat = latitude;
   let lng = longitude;
@@ -338,11 +339,10 @@ export default function DetalhesScreen({ route, navigation }) {
   const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
   const hasRedesSociais = redesSociais && (redesSociais.instagram || redesSociais.facebook || redesSociais.tiktok);
   
+  // ✅ CORREÇÃO: Lógica separada para Eventos vs. Turismo/Serviços
   const formatarPeriodoEvento = () => {
     if (!dataInicio) return 'Data não especificada';
-
     const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-
     const dtInicio = new Date(dataInicio.includes('T') ? dataInicio : dataInicio + 'T00:00:00');
     const diaSemanaInicio = diasSemana[dtInicio.getDay()];
     const dataInicioStr = dtInicio.toLocaleDateString('pt-BR');
@@ -353,10 +353,8 @@ export default function DetalhesScreen({ route, navigation }) {
       const diaSemanaFim = diasSemana[dtFim.getDay()];
       const dataFimStr = dtFim.toLocaleDateString('pt-BR');
       const horaFimStr = dtFim.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
       const exibirHoraInicio = horaInicioStr !== '00:00' ? ` às ${horaInicioStr}` : '';
       const exibirHoraFim = (horaFimStr !== '00:00' && horaFimStr !== '23:59') ? ` às ${horaFimStr}` : '';
-
       return `Inicia ${diaSemanaInicio}, ${dataInicioStr}${exibirHoraInicio} e encerra em ${diaSemanaFim}, ${dataFimStr}${exibirHoraFim}`;
     }
 
@@ -369,9 +367,22 @@ export default function DetalhesScreen({ route, navigation }) {
     return `${diaSemanaInicio}, ${dataInicioStr}`;
   };
 
-  const displayHorario = recorrenciaDescricao && recorrenciaDescricao !== 'Evento único' 
-    ? `${recorrenciaDescricao} (Válido de ${formatarPeriodoEvento()})`
-    : formatarPeriodoEvento();
+  // Define o texto de horário com base no tipo do item
+  let displayHorario = 'Horário não informado';
+  if (isEvento) {
+    if (recorrenciaDescricao && recorrenciaDescricao !== 'Evento único') {
+      displayHorario = `${recorrenciaDescricao} (Válido de ${formatarPeriodoEvento()})`;
+    } else {
+      displayHorario = formatarPeriodoEvento();
+    }
+  } else {
+    // Para Turismo, Restaurantes, Serviços, etc.
+    if (ehSempreAberto) {
+      displayHorario = 'Sempre aberto';
+    } else if (typeof horario === 'string' && horario.trim() !== '') {
+      displayHorario = horario; // Ex: "08:00 às 18:00"
+    }
+  }
 
   return (
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
@@ -453,7 +464,7 @@ export default function DetalhesScreen({ route, navigation }) {
               { backgroundColor: estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)', borderColor: estaAberto ? '#10b981' : '#e11d48' }
             ]}>
               <Text style={{ color: estaAberto ? '#10b981' : '#e11d48', fontWeight: 'bold', fontSize: 11 }}>
-                {tipo?.toLowerCase() === 'evento' 
+                {isEvento 
                   ? (estaAberto ? '● Acontecendo Agora' : '● Em Breve') 
                   : (ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado'))}
               </Text>
@@ -482,7 +493,7 @@ export default function DetalhesScreen({ route, navigation }) {
           )}
 
           {/* INGRESSO / VALOR (Apenas para Eventos) */}
-          {tipo?.toLowerCase() === 'evento' && (
+          {isEvento && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ingresso / Valor</Text>
               <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
@@ -494,18 +505,23 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* DATA E HORÁRIO (MOVIDO PARA CIMA - Logo após Ingresso) */}
+          {/* ✅ DATA E HORÁRIO (LÓGICA CORRIGIDA E INTELIGENTE) */}
           <View style={styles.secao}>
-            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{tipo?.toLowerCase() === 'evento' ? 'Data e Horário' : t('schedule', 'Horário de Funcionamento')}</Text>
+            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>
+              {isEvento ? 'Data e Horário' : t('schedule', 'Horário de Funcionamento')}
+            </Text>
             
-            {sempreAberto || is24h ? (
+            {/* 1. Sempre Aberto / 24h */}
+            {ehSempreAberto ? (
               <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
                 <Ionicons name="time-outline" size={18} color="#10b981" />
                 <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
                   Este local possui acesso livre a qualquer momento, sem restrição de horários.
                 </Text>
               </View>
-            ) : hasHorariosObj ? (
+            ) : 
+            /* 2. Objeto de Horários detalhado (Segunda a Domingo) */
+            hasHorariosObj ? (
               <View style={styles.horariosListaContainer}>
                 {DIAS_SEMANA_LABELS.map((dia) => {
                   const info = horarios[dia.id];
@@ -520,10 +536,14 @@ export default function DetalhesScreen({ route, navigation }) {
                   );
                 })}
               </View>
-            ) : (
+            ) : 
+            /* 3. Fallback: String simples de horário ou mensagem padrão */
+            (
               <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
                 <Ionicons name="calendar-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
-                <Text style={[styles.texto, { color: colors.textPrimary, flex: 1, lineHeight: 20 }]}>{displayHorario}</Text>
+                <Text style={[styles.texto, { color: colors.textPrimary, flex: 1, lineHeight: 20 }]}>
+                  {displayHorario}
+                </Text>
               </View>
             )}
           </View>
