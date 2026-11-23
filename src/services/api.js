@@ -1,10 +1,11 @@
 import Constants from 'expo-constants';
 
-// URL da sua API
 const API_BASE_URL = 'https://turismo-api-vv62.onrender.com/api'; 
 
-// 🚨 PEGA O CITY_ID DINAMICAMENTE DO app.config.js (que lê o .env.rolante ou .env.smart)
-const CITY_ID = Constants.expoConfig?.extra?.cityId || 'rolante';
+// 🚨 Detecta se é o app Smart ou Rolante
+const APP_ENV = Constants.expoConfig?.extra?.appEnv || 'rolante';
+const DEFAULT_CITY_ID = Constants.expoConfig?.extra?.cityId || 'rolante';
+const IS_MULTI_CITY_APP = APP_ENV === 'smart';
 
 async function request(endpoint, options = {}) {
   const headers = {
@@ -15,12 +16,24 @@ async function request(endpoint, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
-  // 🚨 INJEÇÃO AUTOMÁTICA: Adiciona ?cidadeId=rolante em TODAS as requisições GET
   let finalEndpoint = endpoint;
+
+  // 🚨 LÓGICA DE INJEÇÃO INTELIGENTE
   if (options.method === 'GET') {
     const separator = endpoint.includes('?') ? '&' : '?';
-    finalEndpoint = `${endpoint}${separator}cidadeId=${CITY_ID}`;
+    
+    if (IS_MULTI_CITY_APP) {
+      // App Smart: Usa a cidade passada dinamicamente, ou cai para o padrão se não for passada
+      const cidadeId = options.cidadeId || DEFAULT_CITY_ID;
+      finalEndpoint = `${endpoint}${separator}cidadeId=${cidadeId}`;
+    } else {
+      // App Rolante: Usa sempre a cidade fixa do .env
+      finalEndpoint = `${endpoint}${separator}cidadeId=${DEFAULT_CITY_ID}`;
+    }
   }
+
+  // 🚨 LOG DE DEPURAÇÃO (Para vermos exatamente qual URL está sendo chamada)
+  console.log(`🔗 [API.JS] Chamando URL: ${API_BASE_URL}${finalEndpoint}`);
 
   const config = {
     ...options,
@@ -28,7 +41,6 @@ async function request(endpoint, options = {}) {
   };
 
   try {
-    // Usa o finalEndpoint modificado
     const response = await fetch(`${API_BASE_URL}${finalEndpoint}`, config);
     
     if (response.status === 204) {
@@ -49,7 +61,11 @@ async function request(endpoint, options = {}) {
 }
 
 export const api = {
-  get: (endpoint) => request(endpoint, { method: 'GET' }),
+  // 🚨 Agora aceita o segundo parâmetro 'cidadeId' para o App Smart
+  get: (endpoint, cidadeId = null) => request(endpoint, { 
+    method: 'GET',
+    cidadeId 
+  }),
   post: (endpoint, body) => request(endpoint, {
     method: 'POST',
     body: body instanceof FormData ? body : JSON.stringify(body),

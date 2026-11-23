@@ -1,5 +1,7 @@
-// app.config.js
 require('dotenv').config({ path: `.env.${process.env.APP_ENV || 'rolante'}` });
+
+console.log('🔍 [APP.CONFIG] APP_ENV:', process.env.APP_ENV);
+console.log('🔍 [APP.CONFIG] CITY_ID:', process.env.CITY_ID);
 
 export default {
   expo: {
@@ -30,9 +32,10 @@ export default {
       favicon: './assets/favicon.png'
     },
     extra: {
+      appEnv: process.env.APP_ENV || 'rolante', // 🚨 ESTA LINHA É OBRIGATÓRIA
       cityId: process.env.CITY_ID || 'rolante',
       eas: {
-        projectId: "4bdd71a6-f2ca-4d92-abd9-fdb2698f80a2" // Mantenha o ID que já estava no seu app.json
+        projectId: "4bdd71a6-f2ca-4d92-abd9-fdb2698f80a2"
       }
     }
   }
