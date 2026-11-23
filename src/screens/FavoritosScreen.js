@@ -163,7 +163,7 @@ export default function FavoritosScreen({ navigation }) {
                 Seus Lugares{'\n'}Favoritos Salvos
               </Text>
               <Text style={styles.heroSubText}>
-                Acesse rapidamente os recantos que você mais gostou em Riozinho
+                Acesse rapidamente os recantos que você mais gostou em nosso Município!
               </Text>
             </View>
           </View>
@@ -275,6 +275,7 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     alignItems: 'center',
+    height : '100%'
   },
   heroTextContainer: {
     width: '100%',

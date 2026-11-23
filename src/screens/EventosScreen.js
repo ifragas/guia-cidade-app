@@ -163,7 +163,7 @@ export default function EventosScreen({ navigation }) {
             </View>
             <View style={styles.heroTextContainer}>
               <Text style={styles.heroTitleText}>Agenda &{'\n'}Eventos Locais</Text>
-              <Text style={styles.heroSubText}>Descubra o que está acontecendo em Riozinho</Text>
+              <Text style={styles.heroSubText}>Descubra o que está acontecendo em nossa cidade!</Text>
             </View>
           </View>
         </ImageBackground>
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
   mainWrapper: { flex: 1 },
   loadingContainer: { flex: 1, paddingTop: 60, paddingHorizontal: 18 },
   topHeroBanner: { width: '100%', height: 270, justifyContent: 'flex-start' },
-  heroOverlayDark: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0, 0, 0, 0.45)', paddingTop: 50, paddingHorizontal: 20, alignItems: 'center' },
+  heroOverlayDark: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0, 0, 0, 0.45)', paddingTop: 50, paddingHorizontal: 20, alignItems: 'center', height: '100%' },
   searchContainerFloating: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10, marginTop: 6, width: '88%', elevation: 6, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8 },
   searchInputFloating: { flex: 1, fontSize: 14, color: '#333', padding: 0 },
   heroTextContainer: { marginTop: 24, width: '100%' },
