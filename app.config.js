@@ -30,9 +30,10 @@ export default {
       favicon: './assets/favicon.png'
     },
     extra: {
+      appEnv: process.env.APP_ENV || 'rolante',  // 🚨 NOVO: expõe o APP_ENV
       cityId: process.env.CITY_ID || 'rolante',
       eas: {
-        projectId: "4bdd71a6-f2ca-4d92-abd9-fdb2698f80a2" // Mantenha o ID que já estava no seu app.json
+        projectId: "4bdd71a6-f2ca-4d92-abd9-fdb2698f80a2"
       }
     }
   }
