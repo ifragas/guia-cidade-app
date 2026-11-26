@@ -2,7 +2,7 @@
   "name": "Guia Turistico de Riozinho",
   "version": "1.0.0",
   "main": "index.js",
-    "scripts": {
+  "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -21,6 +21,7 @@
     "cross-env": "^10.1.0",
     "dotenv": "^18.0.10",
     "expo": "~58.0.0",
+    "expo-blur": "~58.0.6",
     "expo-build-properties": "~58.0.11",
     "expo-dev-client": "~58.0.15",
     "expo-file-system": "~58.0.13",
@@ -41,6 +42,7 @@
     "react-native-maps": "1.29.11",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0",
     "react-native-web": "^0.21.2",
     "react-native-webview": "14.0.1"
   },

@@ -27,6 +27,7 @@ export default {
         backgroundColor: process.env.APP_COLOR || '#ffffff'
       },
       package: process.env.APP_ID || 'com.ianfraga.guianativo',
+      softwareKeyboardLayoutMode: "resize" 
     },
     web: {
       favicon: './assets/favicon.png'

@@ -38,4 +38,7 @@ yarn-error.*
 
 # local env files
 .env
-.env*.local
+.env*.local".env" 
+".env.rolante" 
+".env.smart" 
+"assets/icon1.png" 

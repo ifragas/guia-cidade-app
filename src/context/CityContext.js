@@ -1,7 +1,9 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import NetInfo from '@react-native-community/netinfo';
 import api from '../services/api';
+import { salvarCache, obterCache } from '../services/cacheService';
 
 const CITY_STORAGE_KEY = '@smart_turismo_cidade_selecionada';
 const IS_MULTI_CITY_APP = Constants.expoConfig?.extra?.appEnv === 'smart';
@@ -14,12 +16,31 @@ export function CityProvider({ children }) {
   const [cidadesDisponiveis, setCidadesDisponiveis] = useState([]);
   const [loading, setLoading] = useState(true);
   const [carregouDoStorage, setCarregouDoStorage] = useState(false);
+  
+  // 🚨 NOVO: Estado de conectividade
+  const [isOffline, setIsOffline] = useState(false);
+
+  // 🚨 NOVO: Monitorar conectividade em tempo real
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const offline = state.isConnected === false || state.isInternetReachable === false;
+      setIsOffline(offline);
+      console.log(`📡 Conectividade: ${offline ? 'OFFLINE' : 'ONLINE'}`);
+    });
+
+    // Check inicial
+    NetInfo.fetch().then((state) => {
+      const offline = state.isConnected === false || state.isInternetReachable === false;
+      setIsOffline(offline);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // 1. Carrega cidade salva no storage ao iniciar
   useEffect(() => {
     const carregarCidadeSalva = async () => {
       if (!IS_MULTI_CITY_APP) {
-        // App de cidade única (Rolante): usa a cidade padrão do .env
         const cidadePadrao = {
           slug: DEFAULT_CITY_ID,
           nome: DEFAULT_CITY_ID === 'rolante' ? 'Rolante' : 'Cidade',
@@ -38,6 +59,21 @@ export function CityProvider({ children }) {
         if (cidadeSalva) {
           const cidadeParseada = JSON.parse(cidadeSalva);
           setCidadeAtual(cidadeParseada);
+          
+          // 🚨 NOVO: Se estiver offline, tenta carregar dados do cache
+          const estadoRede = await NetInfo.fetch();
+          const offline = estadoRede.isConnected === false || estadoRede.isInternetReachable === false;
+          
+          if (offline) {
+            console.log('📴 Offline ao iniciar - tentando carregar dados do cache...');
+            const dadosCache = await obterCache(`cidade_${cidadeParseada.slug}`);
+            if (dadosCache) {
+              console.log('✅ Dados carregados do cache:', Object.keys(dadosCache));
+              // Os dados ficarão disponíveis via função helper
+            } else {
+              console.warn('⚠️ Nenhum cache encontrado para esta cidade');
+            }
+          }
         }
       } catch (error) {
         console.error('Erro ao carregar cidade salva:', error);
@@ -56,8 +92,6 @@ export function CityProvider({ children }) {
 
     const buscarCidades = async () => {
       try {
-        // Tenta buscar da rota pública primeiro. 
-        // Se falhar (ex: 401 não autorizado ou 404), cai no catch e usa o fallback.
         let response = [];
         try {
           response = await api.get('/cidades');
@@ -67,62 +101,117 @@ export function CityProvider({ children }) {
         }
 
         if (Array.isArray(response) && response.length > 0) {
-          // Mapeia para garantir o formato exato que o app espera
           const cidadesFormatadas = response.map((c) => ({
             slug: c.slug,
             nome: c.nome,
             estado: c.estado,
             corPrimaria: c.corPrimaria || '#4CAF50',
             corSecundaria: c.corSecundaria || '#0B2D6B',
-            // Usa heroImageUrl (do seu controller) ou imagemSplash como fallback
             heroImageUrl: c.heroImageUrl || c.imagemSplash || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080',
           }));
           
           setCidadesDisponiveis(cidadesFormatadas);
+          
+          // 🚨 NOVO: Salvar lista de cidades no cache
+          await salvarCache('cidades_disponiveis', cidadesFormatadas);
         } else {
           throw new Error('Lista de cidades vazia');
         }
       } catch (error) {
         console.error('Erro ao buscar cidades do backend:', error.message);
         
-        // 🛡️ FALLBACK SEGURO: Mantém o app funcionando com dados de teste 
-        // enquanto você finaliza o cadastro no painel
-        setCidadesDisponiveis([
-          {
-            slug: 'rolante',
-            nome: 'Rolante',
-            estado: 'RS',
-            corPrimaria: '#0066cc',
-            corSecundaria: '#10b981',
-            heroImageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080',
-          },
-          {
-            slug: 'riozinho',
-            nome: 'Riozinho',
-            estado: 'RS',
-            corPrimaria: '#8b5cf6',
-            corSecundaria: '#ec4899',
-            heroImageUrl: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1080',
-          },
-          {
-            slug: 'taquara',
-            nome: 'Taquara',
-            estado: 'RS',
-            corPrimaria: '#f59e0b',
-            corSecundaria: '#ef4444',
-            heroImageUrl: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1080',
-          },
-        ]);
+        // 🚨 NOVO: Tentar carregar do cache
+        const cidadesCache = await obterCache('cidades_disponiveis');
+        if (cidadesCache) {
+          console.log('✅ Lista de cidades carregada do cache');
+          setCidadesDisponiveis(cidadesCache);
+        } else {
+          setCidadesDisponiveis([
+            {
+              slug: 'rolante',
+              nome: 'Rolante',
+              estado: 'RS',
+              corPrimaria: '#0066cc',
+              corSecundaria: '#10b981',
+              heroImageUrl: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080',
+            },
+            {
+              slug: 'riozinho',
+              nome: 'Riozinho',
+              estado: 'RS',
+              corPrimaria: '#8b5cf6',
+              corSecundaria: '#ec4899',
+              heroImageUrl: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1080',
+            },
+            {
+              slug: 'taquara',
+              nome: 'Taquara',
+              estado: 'RS',
+              corPrimaria: '#f59e0b',
+              corSecundaria: '#ef4444',
+              heroImageUrl: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1080',
+            },
+          ]);
+        }
       }
     };
 
     buscarCidades();
   }, []);
 
+  // 🚨 NOVA FUNÇÃO: Busca e cacheia dados completos de uma cidade
+  const buscarDadosCidade = async (cidade) => {
+    if (!cidade?.slug) return null;
+
+    const cacheKey = `cidade_${cidade.slug}`;
+    
+    try {
+      console.log(`🔄 Buscando dados online para: ${cidade.slug}`);
+      
+      const [turismo, restaurantes, acomodacoes, servicos, eventos] = await Promise.allSettled([
+        api.get('/pontos-turisticos', cidade.slug),
+        api.get('/restaurantes', cidade.slug),
+        api.get('/acomodacoes', cidade.slug),
+        api.get('/servicos', cidade.slug),
+        api.get('/eventos', cidade.slug),
+      ]);
+
+      const dados = {
+        pontosTuristicos: turismo.status === 'fulfilled' ? turismo.value : [],
+        restaurantes: restaurantes.status === 'fulfilled' ? restaurantes.value : [],
+        acomodacoes: acomodacoes.status === 'fulfilled' ? acomodacoes.value : [],
+        servicos: servicos.status === 'fulfilled' ? servicos.value : [],
+        eventos: eventos.status === 'fulfilled' ? eventos.value : [],
+        ultimaAtualizacao: new Date().toISOString(),
+      };
+
+      // Salvar no cache
+      await salvarCache(cacheKey, dados);
+      console.log(`✅ Dados cacheados para: ${cidade.slug}`);
+      
+      return dados;
+    } catch (error) {
+      console.error(`❌ Erro ao buscar dados de ${cidade.slug}:`, error.message);
+      
+      // Fallback: tentar do cache
+      const dadosCache = await obterCache(cacheKey);
+      if (dadosCache) {
+        console.log(`📴 Usando cache para: ${cidade.slug}`);
+        return dadosCache;
+      }
+      
+      return null;
+    }
+  };
+
   const selecionarCidade = async (cidade) => {
     try {
       await AsyncStorage.setItem(CITY_STORAGE_KEY, JSON.stringify(cidade));
       setCidadeAtual(cidade);
+      
+      // 🚨 NOVO: Buscar e cacheiar dados automaticamente ao selecionar
+      console.log(`📍 Cidade selecionada: ${cidade.nome} - buscando dados...`);
+      await buscarDadosCidade(cidade);
     } catch (error) {
       console.error('Erro ao salvar cidade:', error);
     }
@@ -137,6 +226,12 @@ export function CityProvider({ children }) {
     }
   };
 
+  // 🚨 NOVA FUNÇÃO: Obter dados do cache (para telas usarem offline)
+  const obterDadosCidadeCache = async (slug) => {
+    if (!slug) return null;
+    return await obterCache(`cidade_${slug}`);
+  };
+
   return (
     <CityContext.Provider
       value={{
@@ -145,8 +240,11 @@ export function CityProvider({ children }) {
         loading,
         carregouDoStorage,
         isMultiCityApp: IS_MULTI_CITY_APP,
+        isOffline, // 🚨 NOVO: Estado de offline disponível para todas as telas
         selecionarCidade,
         trocarCidade,
+        buscarDadosCidade, // 🚨 NOVO: Função para buscar e cacheiar dados
+        obterDadosCidadeCache, // 🚨 NOVO: Função para ler do cache
       }}
     >
       {children}

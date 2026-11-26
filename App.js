@@ -14,8 +14,11 @@ import DetalhesScreen from './src/screens/DetalhesScreen';
 import CitySelectionScreen from './src/screens/CitySelectionScreen';
 import CitySplashScreen from './src/screens/CitySplashScreen';
 import SmartHomeScreen from './src/screens/SmartHomeScreen';
+import SmartListScreen from './src/screens/SmartListScreen';
+import AIScreen from './src/screens/AIScreen';
 
-import { useThemeColors } from './src/utils/ThemeContext';
+// Components & Context
+import CustomSmartTabBar from './src/components/CustomSmartTabBar';
 import { CityProvider, useCity } from './src/context/CityContext';
 import './src/locales/i18n';
 
@@ -54,11 +57,26 @@ function RolanteNavigator() {
   );
 }
 
-// --- Navegação do App SMART ---
+// --- Navegação do App SMART (Com Tab Bar Customizada) ---
 function SmartNavigator() {
   return (
+    <Tab.Navigator
+      tabBar={(props) => <CustomSmartTabBar {...props} />}
+      screenOptions={{ ...defaultScreenOptions, lazy: false }}
+    >
+      <Tab.Screen name="SmartHome" component={SmartHomeScreen} options={{ title: 'Mapa' }} />
+      <Tab.Screen name="SmartList" component={SmartListScreen} options={{ title: 'Explorar' }} />
+      {/* 🚨 CORREÇÃO AQUI: Trocado de Favoritos para AI */}
+      <Tab.Screen name="AI" component={AIScreen} options={{ title: 'Guia IA' }} />
+    </Tab.Navigator>
+  );
+}
+
+// --- Stack Principal ---
+function MainStack() {
+  return (
     <Stack.Navigator screenOptions={defaultScreenOptions}>
-      <Stack.Screen name="SmartHome" component={SmartHomeScreen} />
+      <Stack.Screen name="SmartTabs" component={SmartNavigator} />
       <Stack.Screen name="Detalhes" component={DetalhesScreen} />
     </Stack.Navigator>
   );
@@ -68,18 +86,14 @@ function SmartNavigator() {
 function AppNavigator() {
   const { ready } = useTranslation();
   const { isMultiCityApp, cidadeAtual, loading } = useCity();
-  
-  // Controla se devemos mostrar o splash da cidade
   const [showCitySplash, setShowCitySplash] = useState(true);
 
-  // Sempre que a cidade mudar (ex: usuário trocou de cidade), reseta o splash para mostrar de novo
   useEffect(() => {
     if (cidadeAtual) {
       setShowCitySplash(true);
     }
   }, [cidadeAtual]);
 
-  // 1. Enquanto o Contexto lê o AsyncStorage ou i18n carrega
   if (loading || !ready) {
     return (
       <View style={styles.loadingContainer}>
@@ -88,7 +102,6 @@ function AppNavigator() {
     );
   }
 
-  // 2. Se for o app de cidade única (Rolante), vai direto para as tabs
   if (!isMultiCityApp) {
     return (
       <NavigationContainer>
@@ -97,7 +110,6 @@ function AppNavigator() {
     );
   }
 
-  // 3. Se for Smart e NÃO tiver cidade selecionada → Tela de Seleção
   if (!cidadeAtual) {
     return (
       <NavigationContainer>
@@ -108,15 +120,13 @@ function AppNavigator() {
     );
   }
 
-  // 4. Se for Smart e TIVER cidade selecionada → Mostra o Splash da Cidade primeiro
   if (showCitySplash) {
     return <CitySplashScreen onFinished={() => setShowCitySplash(false)} />;
   }
 
-  // 5. Após o splash terminar → Mostra a Home do Smart
   return (
     <NavigationContainer>
-      <SmartNavigator />
+      <MainStack />
     </NavigationContainer>
   );
 }

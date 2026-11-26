@@ -1,4 +1,3 @@
-// src/screens/DetalhesScreen.js
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
@@ -22,8 +21,10 @@ import { getFavoritos, toggleFavorito } from '../utils/FavoritosHelper';
 import { useThemeColors } from '../utils/ThemeContext';
 import { isAbertoAgora } from '../utils/ScheduleHelper';
 import api from '../services/api';
-
+import { useCity } from '../context/CityContext';
 import OfflineMapCard from '../components/OfflineMapCard';
+import SkeletonOverlay from '../components/SkeletonOverlay';
+import { obterCache } from '../services/cacheService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -65,7 +66,7 @@ const getIconeServico = (tipoServico) => {
 export default function DetalhesScreen({ route, navigation }) {
   const initialItem = route.params || {};
   const { id } = initialItem;
-  
+
   const [item, setItem] = useState(initialItem);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isFavorito, setIsFavorito] = useState(false);
@@ -73,61 +74,71 @@ export default function DetalhesScreen({ route, navigation }) {
   const flatListRef = useRef(null);
   const { t } = useTranslation();
   const { colors, isDark } = useThemeColors();
+  const { cidadeAtual } = useCity();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchDetalhesCompletos() {
-      if (!id) return;
+      if (!id) {
+        setLoading(false);
+        return;
+      }
       try {
         let rotaTipo = 'pontos-turisticos';
         const tipoAtual = initialItem.tipo;
+
         if (tipoAtual) {
           const tLower = tipoAtual.toLowerCase();
           if (tLower.includes('restaurante') || tLower.includes('gastronomia')) rotaTipo = 'restaurantes';
           else if (tLower.includes('acomodacao') || tLower.includes('hotel') || tLower.includes('hospedagem')) rotaTipo = 'acomodacoes';
-          else if (tLower === 'servicos') rotaTipo = 'servicos';
+          else if (tLower === 'servicos' || tLower.includes('serviço')) rotaTipo = 'servicos';
           else if (tLower.includes('evento')) rotaTipo = 'eventos';
         }
 
-        const lista = await api.get(`/${rotaTipo}`);
-        if (Array.isArray(lista)) {
-          const itemAtualizado = lista.find(el => String(el.id) === String(id));
-          if (itemAtualizado) {
-            setItem(prev => ({ ...prev, ...itemAtualizado }));
+        // 🚨 TENTAR CACHE PRIMEIRO (funciona offline e elimina requisição)
+        let itemEncontrado = null;
+        if (cidadeAtual?.slug) {
+          const cacheKey = `cidade_${cidadeAtual.slug}`;
+          const dadosCache = await obterCache(cacheKey);
+
+          if (dadosCache && dadosCache[rotaTipo]) {
+            console.log(`📴 [Detalhes] Buscando no cache: ${id}`);
+            itemEncontrado = dadosCache[rotaTipo].find(el => String(el.id) === String(id));
           }
         }
+
+        // 🚨 FALLBACK: Se não achou no cache, busca na API
+        if (!itemEncontrado) {
+          console.log(`🌐 [Detalhes] Cache não tem o item, buscando na API: ${id}`);
+          const slugCidade = cidadeAtual?.slug || null;
+          const lista = await api.get(`/${rotaTipo}`, slugCidade);
+
+          if (Array.isArray(lista)) {
+            itemEncontrado = lista.find(el => String(el.id) === String(id));
+          }
+        }
+
+        if (itemEncontrado) {
+          console.log('✅ [Detalhes] Item encontrado:', itemEncontrado.nome || itemEncontrado.titulo);
+          setItem(prev => ({ ...prev, ...itemEncontrado }));
+        } else {
+          console.warn('⚠️ [Detalhes] Item não encontrado:', id);
+        }
       } catch (error) {
-        console.log('Erro ao buscar detalhes completos da API:', error.message);
+        console.error('❌ Erro ao buscar detalhes:', error.message);
+      } finally {
+        setLoading(false);
       }
     }
+
     fetchDetalhesCompletos();
-  }, [id]);
+  }, [id, cidadeAtual?.slug]);
 
   const {
-    nome,
-    titulo,
-    descricao,
-    endereco,
-    horario,
-    recorrenciaDescricao,
-    horarios,
-    sempreAberto,
-    whatsapp,
-    redesSociais,
-    linkExterno,
-    imagem,
-    imagens,
-    tipo,
-    latitude,
-    longitude,
-    coordenadas,
-    tipoServico,
-    funcionamento24h,
-    telefone,
-    gratuito,
-    preco,
-    dataInicio,
-    dataFim,
-    proximaOcorrencia
+    nome, titulo, descricao, endereco, horario, recorrenciaDescricao, horarios,
+    sempreAberto, whatsapp, redesSociais, linkExterno, imagem, imagens, tipo,
+    latitude, longitude, coordenadas, tipoServico, funcionamento24h, telefone,
+    gratuito, preco, dataInicio, dataFim, proximaOcorrencia
   } = item;
 
   const displayNome = nome || titulo || 'Detalhes';
@@ -150,16 +161,11 @@ export default function DetalhesScreen({ route, navigation }) {
   const parsedLng = parseFloat(lng);
   const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLng);
   const imageList = Array.isArray(imagens) && imagens.length > 0 ? imagens : [imagem];
-
   const estaAberto = item.acontecendoAgora !== undefined ? item.acontecendoAgora : isAbertoAgora(item);
 
   const whatsappList = useMemo(() => {
-    if (typeof whatsapp === 'string' && whatsapp.trim()) {
-      return [whatsapp];
-    }
-    if (Array.isArray(whatsapp)) {
-      return whatsapp.filter(Boolean);
-    }
+    if (typeof whatsapp === 'string' && whatsapp.trim()) return [whatsapp];
+    if (Array.isArray(whatsapp)) return whatsapp.filter(Boolean);
     return [];
   }, [whatsapp]);
 
@@ -167,9 +173,7 @@ export default function DetalhesScreen({ route, navigation }) {
     async function checkFavorito() {
       if (!id) return;
       const favs = await getFavoritos();
-      if (favs.includes(String(id))) {
-        setIsFavorito(true);
-      }
+      if (favs.includes(String(id))) setIsFavorito(true);
     }
     checkFavorito();
   }, [id]);
@@ -182,9 +186,7 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const handleShare = async () => {
     try {
-      await Share.share({
-        message: `Confira ${displayNome} no Guia Turístico! ${endereco ? 'Endereço: ' + endereco : ''}`,
-      });
+      await Share.share({ message: `Confira ${displayNome} no Guia Turístico! ${endereco ? 'Endereço: ' + endereco : ''}` });
     } catch (error) {
       Alert.alert(t('error', 'Erro'), 'Não foi possível partilhar o local.');
     }
@@ -192,9 +194,7 @@ export default function DetalhesScreen({ route, navigation }) {
 
   const handleScroll = (event) => {
     const slide = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-    if (slide !== activeIndex && slide >= 0 && slide < imageList.length) {
-      setActiveIndex(slide);
-    }
+    if (slide !== activeIndex && slide >= 0 && slide < imageList.length) setActiveIndex(slide);
   };
 
   const scrollToIndex = (index) => {
@@ -207,139 +207,64 @@ export default function DetalhesScreen({ route, navigation }) {
   const abrirTelefone = async (numero) => {
     if (!numero) return;
     const cleanNum = String(numero).replace(/\D/g, '');
-    const url = `tel:${cleanNum}`;
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o discador neste dispositivo.');
-      }
-    } catch (err) {
-      Alert.alert(t('error', 'Erro'), 'Erro ao abrir o discador.');
-    }
+      const supported = await Linking.canOpenURL(`tel:${cleanNum}`);
+      if (supported) await Linking.openURL(`tel:${cleanNum}`);
+      else Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o discador.');
+    } catch (err) { Alert.alert(t('error', 'Erro'), 'Erro ao abrir o discador.'); }
   };
 
   const abrirWhatsapp = async (numero) => {
     const cleanNum = String(numero).replace(/\D/g, '');
-    const url = `https://wa.me/55${cleanNum}`;
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      } else {
-        Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o WhatsApp neste dispositivo.');
-      }
-    } catch (err) {
-      Alert.alert(t('error', 'Erro'), 'Erro ao abrir WhatsApp.');
-    }
+      const supported = await Linking.canOpenURL(`https://wa.me/55${cleanNum}`);
+      if (supported) await Linking.openURL(`https://wa.me/55${cleanNum}`);
+      else Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o WhatsApp.');
+    } catch (err) { Alert.alert(t('error', 'Erro'), 'Erro ao abrir WhatsApp.'); }
   };
 
   const abrirLinkExterno = async (urlLink) => {
     if (!urlLink) return;
     let targetUrl = urlLink.trim();
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-      targetUrl = `https://${targetUrl}`;
-    }
-    try {
-      await Linking.openURL(targetUrl);
-    } catch (err) {
-      Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link externo.');
-    }
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) targetUrl = `https://${targetUrl}`;
+    try { await Linking.openURL(targetUrl); } catch (err) { Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link.'); }
   };
 
   const abrirRedeSocial = async (url) => {
     if (!url) return;
     let targetUrl = url.trim();
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-      targetUrl = `https://${targetUrl}`;
-    }
-    try {
-      await Linking.openURL(targetUrl);
-    } catch (err) {
-      Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link.');
-    }
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) targetUrl = `https://${targetUrl}`;
+    try { await Linking.openURL(targetUrl); } catch (err) { Alert.alert(t('error', 'Erro'), 'Não foi possível abrir o link.'); }
   };
 
   const abrirNoMapa = () => {
-    if (!hasValidCoords) {
-      Alert.alert(t('locationUnavailable', 'Localização indisponível'));
-      return;
-    }
-
+    if (!hasValidCoords) { Alert.alert(t('locationUnavailable', 'Localização indisponível')); return; }
     const label = encodeURIComponent(displayNome || 'Local');
-
     const opcoes = [
-      {
-        label: 'Google Maps',
-        url: Platform.OS === 'ios'
-          ? `comgooglemaps://?q=${parsedLat},${parsedLng}&center=${parsedLat},${parsedLng}`
-          : `geo:${parsedLat},${parsedLng}?q=${parsedLat},${parsedLng}(${label})`,
-        fallbackUrl: `https://www.google.com/maps/search/?api=1&query=${parsedLat},${parsedLng}`,
-      },
-      {
-        label: 'Waze',
-        url: `waze://?ll=${parsedLat},${parsedLng}&navigate=yes`,
-        fallbackUrl: `https://waze.com/ul?ll=${parsedLat},${parsedLng}&navigate=yes`,
-      },
+      { label: 'Google Maps', url: Platform.OS === 'ios' ? `comgooglemaps://?q=${parsedLat},${parsedLng}&center=${parsedLat},${parsedLng}` : `geo:${parsedLat},${parsedLng}?q=${parsedLat},${parsedLng}(${label})`, fallbackUrl: `https://www.google.com/maps/search/?api=1&query=${parsedLat},${parsedLng}` },
+      { label: 'Waze', url: `waze://?ll=${parsedLat},${parsedLng}&navigate=yes`, fallbackUrl: `https://waze.com/ul?ll=${parsedLat},${parsedLng}&navigate=yes` },
     ];
-
-    if (Platform.OS === 'ios') {
-      opcoes.unshift({
-        label: 'Apple Maps',
-        url: `maps://?q=${label}&ll=${parsedLat},${parsedLng}`,
-        fallbackUrl: `maps://?q=${label}&ll=${parsedLat},${parsedLng}`,
-      });
-    }
+    if (Platform.OS === 'ios') opcoes.unshift({ label: 'Apple Maps', url: `maps://?q=${label}&ll=${parsedLat},${parsedLng}`, fallbackUrl: `maps://?q=${label}&ll=${parsedLat},${parsedLng}` });
 
     const executarAbertura = async (url, fallbackUrl) => {
       try {
         const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-        } else {
-          await Linking.openURL(fallbackUrl);
-        }
-      } catch (err) {
-        await Linking.openURL(fallbackUrl);
-      }
+        if (supported) await Linking.openURL(url); else await Linking.openURL(fallbackUrl);
+      } catch (err) { await Linking.openURL(fallbackUrl); }
     };
 
     if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: [...opcoes.map(o => o.label), 'Cancelar'],
-          cancelButtonIndex: opcoes.length,
-          title: 'Como deseja navegar?',
-          message: `Escolha o aplicativo de mapas para traçar a rota até ${displayNome}`,
-        },
-        (buttonIndex) => {
-          if (buttonIndex < opcoes.length) {
-            const escolha = opcoes[buttonIndex];
-            executarAbertura(escolha.url, escolha.fallbackUrl);
-          }
-        }
-      );
+      ActionSheetIOS.showActionSheetWithOptions({ options: [...opcoes.map(o => o.label), 'Cancelar'], cancelButtonIndex: opcoes.length, title: 'Como deseja navegar?', message: `Escolha o app para traçar a rota até ${displayNome}` }, (buttonIndex) => {
+        if (buttonIndex < opcoes.length) { const escolha = opcoes[buttonIndex]; executarAbertura(escolha.url, escolha.fallbackUrl); }
+      });
     } else {
-      Alert.alert(
-        'Como deseja navegar?',
-        `Escolha o aplicativo de mapas para traçar a rota até ${displayNome}`,
-        [
-          ...opcoes.map(opcao => ({
-            text: opcao.label,
-            onPress: () => executarAbertura(opcao.url, opcao.fallbackUrl),
-          })),
-          { text: 'Cancelar', style: 'cancel' },
-        ],
-        { cancelable: true }
-      );
+      Alert.alert('Como deseja navegar?', `Escolha o app para traçar a rota até ${displayNome}`, [...opcoes.map(opcao => ({ text: opcao.label, onPress: () => executarAbertura(opcao.url, opcao.fallbackUrl) })), { text: 'Cancelar', style: 'cancel' }], { cancelable: true });
     }
   };
 
   const hasHorariosObj = horarios && typeof horarios === 'object' && Object.keys(horarios).length > 0;
   const hasRedesSociais = redesSociais && (redesSociais.instagram || redesSociais.facebook || redesSociais.tiktok);
-  
-  // ✅ CORREÇÃO: Lógica separada para Eventos vs. Turismo/Serviços
+
   const formatarPeriodoEvento = () => {
     if (!dataInicio) return 'Data não especificada';
     const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -347,7 +272,6 @@ export default function DetalhesScreen({ route, navigation }) {
     const diaSemanaInicio = diasSemana[dtInicio.getDay()];
     const dataInicioStr = dtInicio.toLocaleDateString('pt-BR');
     const horaInicioStr = dtInicio.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-
     if (dataFim && dataFim !== dataInicio) {
       const dtFim = new Date(dataFim.includes('T') ? dataFim : dataFim + 'T23:59:59');
       const diaSemanaFim = diasSemana[dtFim.getDay()];
@@ -357,116 +281,47 @@ export default function DetalhesScreen({ route, navigation }) {
       const exibirHoraFim = (horaFimStr !== '00:00' && horaFimStr !== '23:59') ? ` às ${horaFimStr}` : '';
       return `Inicia ${diaSemanaInicio}, ${dataInicioStr}${exibirHoraInicio} e encerra em ${diaSemanaFim}, ${dataFimStr}${exibirHoraFim}`;
     }
-
     if (proximaOcorrencia && proximaOcorrencia.inicio) {
       const hInicio = new Date(proximaOcorrencia.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
       const hFim = proximaOcorrencia.fim ? new Date(proximaOcorrencia.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
       return `${diaSemanaInicio}, ${dataInicioStr} das ${hInicio} às ${hFim}`;
     }
-
     return `${diaSemanaInicio}, ${dataInicioStr}`;
   };
 
-  // Define o texto de horário com base no tipo do item
   let displayHorario = 'Horário não informado';
   if (isEvento) {
-    if (recorrenciaDescricao && recorrenciaDescricao !== 'Evento único') {
-      displayHorario = `${recorrenciaDescricao} (Válido de ${formatarPeriodoEvento()})`;
-    } else {
-      displayHorario = formatarPeriodoEvento();
-    }
+    if (recorrenciaDescricao && recorrenciaDescricao !== 'Evento único') displayHorario = `${recorrenciaDescricao} (Válido de ${formatarPeriodoEvento()})`;
+    else displayHorario = formatarPeriodoEvento();
   } else {
-    // Para Turismo, Restaurantes, Serviços, etc.
-    if (ehSempreAberto) {
-      displayHorario = 'Sempre aberto';
-    } else if (typeof horario === 'string' && horario.trim() !== '') {
-      displayHorario = horario; // Ex: "08:00 às 18:00"
-    }
+    if (ehSempreAberto) displayHorario = 'Sempre aberto';
+    else if (typeof horario === 'string' && horario.trim() !== '') displayHorario = horario;
   }
 
   return (
     <View style={[styles.mainWrapper, { backgroundColor: colors.background }]}>
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      {loading && <SkeletonOverlay visible={true} type="details" />}
 
-      <ScrollView style={{ flex: 1 }} 
-        showsVerticalScrollIndicator={false} 
-        contentContainerStyle={{ paddingBottom: 5 }}
-        scrollEnabled={!isMapInteracting}
-        nestedScrollEnabled={true}
-        overScrollMode="never"
-        bounces={false}
-        scrollEventThrottle={16}
-        removeClippedSubviews={true}
-      >
-        
+      <ScrollView style={{ flex: 1, opacity: loading ? 0 : 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 5 }} scrollEnabled={!isMapInteracting} nestedScrollEnabled={true} overScrollMode="never" bounces={false} scrollEventThrottle={16} removeClippedSubviews={true}>
         <View style={styles.carouselContainer}>
-          <FlatList
-            ref={flatListRef}
-            data={imageList}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={(_, index) => index.toString()}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            renderItem={({ item: imgUri }) => (
-              <Image
-                source={{ uri: imgUri || 'https://images.unsplash.com/photo-1432821596592-e2c18b78144f' }}
-                style={styles.carouselImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-            )}
-          />
-
-          <TouchableOpacity style={styles.floatingBackButton} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Ionicons name="arrow-back" size={20} color="#fff" />
-          </TouchableOpacity>
-
+          <FlatList ref={flatListRef} data={imageList} horizontal pagingEnabled showsHorizontalScrollIndicator={false} keyExtractor={(_, index) => index.toString()} onScroll={handleScroll} scrollEventThrottle={16} renderItem={({ item: imgUri }) => (<Image source={{ uri: imgUri || 'https://images.unsplash.com/photo-1432821596592-e2c18b78144f' }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" />)} />
+          <TouchableOpacity style={styles.floatingBackButton} onPress={() => navigation.goBack()} activeOpacity={0.8}><Ionicons name="arrow-back" size={20} color="#fff" /></TouchableOpacity>
           <View style={styles.floatingActionsRow}>
-            <TouchableOpacity style={styles.floatingActionButton} onPress={handleShare} activeOpacity={0.8}>
-              <Ionicons name="share-social-outline" size={18} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.floatingActionButton} onPress={handleToggleFavorito} activeOpacity={0.8}>
-              <Ionicons name={isFavorito ? 'heart' : 'heart-outline'} size={18} color={isFavorito ? '#ff3b30' : '#fff'} />
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={handleShare} activeOpacity={0.8}><Ionicons name="share-social-outline" size={18} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity style={styles.floatingActionButton} onPress={handleToggleFavorito} activeOpacity={0.8}><Ionicons name={isFavorito ? 'heart' : 'heart-outline'} size={18} color={isFavorito ? '#ff3b30' : '#fff'} /></TouchableOpacity>
           </View>
-
-          {imageList.length > 1 && activeIndex > 0 && (
-            <TouchableOpacity style={[styles.arrowButton, { left: 14 }]} onPress={() => scrollToIndex(activeIndex - 1)}>
-              <Ionicons name="chevron-back" size={20} color="#FFF" />
-            </TouchableOpacity>
-          )}
-          {imageList.length > 1 && activeIndex < imageList.length - 1 && (
-            <TouchableOpacity style={[styles.arrowButton, { right: 14 }]} onPress={() => scrollToIndex(activeIndex + 1)}>
-              <Ionicons name="chevron-forward" size={20} color="#FFF" />
-            </TouchableOpacity>
-          )}
-
-          {imageList.length > 1 && (
-            <View style={styles.paginationContainer}>
-              {imageList.map((_, idx) => (
-                <View key={idx} style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]} />
-              ))}
-            </View>
-          )}
+          {imageList.length > 1 && activeIndex > 0 && (<TouchableOpacity style={[styles.arrowButton, { left: 14 }]} onPress={() => scrollToIndex(activeIndex - 1)}><Ionicons name="chevron-back" size={20} color="#FFF" /></TouchableOpacity>)}
+          {imageList.length > 1 && activeIndex < imageList.length - 1 && (<TouchableOpacity style={[styles.arrowButton, { right: 14 }]} onPress={() => scrollToIndex(activeIndex + 1)}><Ionicons name="chevron-forward" size={20} color="#FFF" /></TouchableOpacity>)}
+          {imageList.length > 1 && (<View style={styles.paginationContainer}>{imageList.map((_, idx) => (<View key={idx} style={[styles.dot, activeIndex === idx ? styles.activeDot : styles.inactiveDot]} />))}</View>)}
         </View>
 
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
-          
           <View style={styles.headerTitleRow}>
-            <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text>
-            </View>
-
-            <View style={[
-              styles.statusBadge, 
-              { backgroundColor: estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)', borderColor: estaAberto ? '#10b981' : '#e11d48' }
-            ]}>
+            <View style={styles.typeBadge}><Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text></View>
+            <View style={[styles.statusBadge, { backgroundColor: estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)', borderColor: estaAberto ? '#10b981' : '#e11d48' }]}>
               <Text style={{ color: estaAberto ? '#10b981' : '#e11d48', fontWeight: 'bold', fontSize: 11 }}>
-                {isEvento 
-                  ? (estaAberto ? '● Acontecendo Agora' : '● Em Breve') 
-                  : (ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado'))}
+                {isEvento ? (estaAberto ? '● Acontecendo Agora' : '● Em Breve') : (ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado'))}
               </Text>
             </View>
           </View>
@@ -475,53 +330,29 @@ export default function DetalhesScreen({ route, navigation }) {
 
           {isServico && (
             <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              {is24h && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#dc2626', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}>
-                  <Ionicons name="time" size={14} color="#fff" />
-                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>24 HORAS</Text>
-                </View>
-              )}
-              {tipoServico && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#334155' : '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-                  <MaterialCommunityIcons name={getIconeServico(tipoServico)} size={18} color={isDark ? '#94a3b8' : '#475569'} />
-                  <Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, fontWeight: '600', marginLeft: 6, textTransform: 'capitalize' }}>
-                    {tipoServico}
-                  </Text>
-                </View>
-              )}
+              {is24h && (<View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#dc2626', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}><Ionicons name="time" size={14} color="#fff" /><Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', marginLeft: 4 }}>24 HORAS</Text></View>)}
+              {tipoServico && (<View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#334155' : '#f1f5f9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}><MaterialCommunityIcons name={getIconeServico(tipoServico)} size={18} color={isDark ? '#94a3b8' : '#475569'} /><Text style={{ color: isDark ? '#cbd5e1' : '#334155', fontSize: 14, fontWeight: '600', marginLeft: 6, textTransform: 'capitalize' }}>{tipoServico}</Text></View>)}
             </View>
           )}
 
-          {/* INGRESSO / VALOR (Apenas para Eventos) */}
           {isEvento && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ingresso / Valor</Text>
               <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
                 <Ionicons name="ticket-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
-                <Text style={[styles.texto, { color: colors.textPrimary, fontWeight: '600', flex: 1 }]}>
-                  {gratuito ? 'Gratuito' : (preco ? `R$ ${preco}` : 'Valor não informado')}
-                </Text>
+                <Text style={[styles.texto, { color: colors.textPrimary, fontWeight: '600', flex: 1 }]}>{gratuito ? 'Gratuito' : (preco ? `R$ ${preco}` : 'Valor não informado')}</Text>
               </View>
             </View>
           )}
 
-          {/* ✅ DATA E HORÁRIO (LÓGICA CORRIGIDA E INTELIGENTE) */}
           <View style={styles.secao}>
-            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>
-              {isEvento ? 'Data e Horário' : t('schedule', 'Horário de Funcionamento')}
-            </Text>
-            
-            {/* 1. Sempre Aberto / 24h */}
+            <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{isEvento ? 'Data e Horário' : t('schedule', 'Horário de Funcionamento')}</Text>
             {ehSempreAberto ? (
               <View style={[styles.sempreAbertoBox, { backgroundColor: isDark ? '#1e1e1e' : '#f9fafb', borderColor: colors.border }]}>
                 <Ionicons name="time-outline" size={18} color="#10b981" />
-                <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>
-                  Este local possui acesso livre a qualquer momento, sem restrição de horários.
-                </Text>
+                <Text style={[styles.sempreAbertoText, { color: colors.textSecondary }]}>Este local possui acesso livre a qualquer momento, sem restrição de horários.</Text>
               </View>
-            ) : 
-            /* 2. Objeto de Horários detalhado (Segunda a Domingo) */
-            hasHorariosObj ? (
+            ) : hasHorariosObj ? (
               <View style={styles.horariosListaContainer}>
                 {DIAS_SEMANA_LABELS.map((dia) => {
                   const info = horarios[dia.id];
@@ -529,73 +360,47 @@ export default function DetalhesScreen({ route, navigation }) {
                   return (
                     <View key={dia.id} style={[styles.horarioRowItem, { backgroundColor: colors.cardBackground || (isDark ? '#1e1e1e' : '#f8fafc') }]}>
                       <Text style={[styles.horarioDiaLabel, { color: colors.textPrimary }]}>{dia.label}</Text>
-                      <Text style={styles.horarioHorasText}>
-                        {info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}
-                      </Text>
+                      <Text style={styles.horarioHorasText}>{info.ativo !== false && info.abertura && info.fecho ? `${info.abertura} às ${info.fecho}` : 'Fechado'}</Text>
                     </View>
                   );
                 })}
               </View>
-            ) : 
-            /* 3. Fallback: String simples de horário ou mensagem padrão */
-            (
+            ) : (
               <View style={[styles.infoRow, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }]}>
                 <Ionicons name="calendar-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
-                <Text style={[styles.texto, { color: colors.textPrimary, flex: 1, lineHeight: 20 }]}>
-                  {displayHorario}
-                </Text>
+                <Text style={[styles.texto, { color: colors.textPrimary, flex: 1, lineHeight: 20 }]}>{displayHorario}</Text>
               </View>
             )}
           </View>
 
-          {/* TELEFONE FIXO */}
           {telefone && String(telefone).trim() !== '' && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Ligar (Telefone Fixo)</Text>
-              <TouchableOpacity 
-                style={[styles.infoRowLink, { borderColor: colors.border }]} 
-                onPress={() => abrirTelefone(telefone)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={[styles.infoRowLink, { borderColor: colors.border }]} onPress={() => abrirTelefone(telefone)} activeOpacity={0.7}>
                 <Ionicons name="call-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
-                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]}>
-                  {formatarTelefoneBR(telefone)}
-                </Text>
+                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]}>{formatarTelefoneBR(telefone)}</Text>
                 <Ionicons name="call" size={16} color="#10b981" />
               </TouchableOpacity>
             </View>
           )}
 
-          {/* LINK EXTERNO */}
-          {linkExterno && String(linkExterno).trim() !== '' ? (
+          {linkExterno && String(linkExterno).trim() !== '' && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Link Externo / Mais Informações</Text>
-              <TouchableOpacity 
-                style={[styles.infoRowLink, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', borderColor: colors.border }]} 
-                onPress={() => abrirLinkExterno(linkExterno)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={[styles.infoRowLink, { backgroundColor: isDark ? '#1e1e1e' : '#f8fafc', borderColor: colors.border }]} onPress={() => abrirLinkExterno(linkExterno)} activeOpacity={0.7}>
                 <Ionicons name="globe-outline" size={18} color="#10b981" style={{ marginRight: 8 }} />
-                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]} numberOfLines={1}>
-                  {linkExterno}
-                </Text>
+                <Text style={[styles.textoLink, { color: '#10b981', flex: 1 }]} numberOfLines={1}>{linkExterno}</Text>
                 <Ionicons name="open-outline" size={16} color="#10b981" style={{ marginLeft: 4 }} />
               </TouchableOpacity>
             </View>
-          ) : null}
+          )}
 
-          {/* WHATSAPP */}
           {whatsappList.length > 0 && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>WhatsApp</Text>
               <View style={styles.whatsappContainer}>
                 {whatsappList.map((num, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.btnWhatsapp}
-                    onPress={() => abrirWhatsapp(num)}
-                    activeOpacity={0.8}
-                  >
+                  <TouchableOpacity key={idx} style={styles.btnWhatsapp} onPress={() => abrirWhatsapp(num)} activeOpacity={0.8}>
                     <Ionicons name="logo-whatsapp" size={18} color="#fff" />
                     <Text style={styles.btnWhatsappText}>{formatarTelefoneBR(num)}</Text>
                   </TouchableOpacity>
@@ -604,40 +409,22 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* REDES SOCIAIS */}
           {hasRedesSociais && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>Redes Sociais</Text>
               <View style={styles.redesContainer}>
-                {redesSociais.instagram && (
-                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#e1306c' }]} onPress={() => abrirRedeSocial(redesSociais.instagram)} activeOpacity={0.8}>
-                    <Ionicons name="logo-instagram" size={18} color="#fff" />
-                    <Text style={styles.btnRedeText}>Instagram</Text>
-                  </TouchableOpacity>
-                )}
-                {redesSociais.facebook && (
-                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#1877f2' }]} onPress={() => abrirRedeSocial(redesSociais.facebook)} activeOpacity={0.8}>
-                    <Ionicons name="logo-facebook" size={18} color="#fff" />
-                    <Text style={styles.btnRedeText}>Facebook</Text>
-                  </TouchableOpacity>
-                )}
-                {redesSociais.tiktok && (
-                  <TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#000000' }]} onPress={() => abrirRedeSocial(redesSociais.tiktok)} activeOpacity={0.8}>
-                    <Ionicons name="logo-tiktok" size={18} color="#fff" />
-                    <Text style={styles.btnRedeText}>TikTok</Text>
-                  </TouchableOpacity>
-                )}
+                {redesSociais.instagram && (<TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#e1306c' }]} onPress={() => abrirRedeSocial(redesSociais.instagram)} activeOpacity={0.8}><Ionicons name="logo-instagram" size={18} color="#fff" /><Text style={styles.btnRedeText}>Instagram</Text></TouchableOpacity>)}
+                {redesSociais.facebook && (<TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#1877f2' }]} onPress={() => abrirRedeSocial(redesSociais.facebook)} activeOpacity={0.8}><Ionicons name="logo-facebook" size={18} color="#fff" /><Text style={styles.btnRedeText}>Facebook</Text></TouchableOpacity>)}
+                {redesSociais.tiktok && (<TouchableOpacity style={[styles.btnRedeSocial, { backgroundColor: '#000000' }]} onPress={() => abrirRedeSocial(redesSociais.tiktok)} activeOpacity={0.8}><Ionicons name="logo-tiktok" size={18} color="#fff" /><Text style={styles.btnRedeText}>TikTok</Text></TouchableOpacity>)}
               </View>
             </View>
           )}
 
-          {/* DESCRIÇÃO */}
           <View style={styles.secao}>
             <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('description', 'Descrição')}</Text>
             <Text style={[styles.texto, { color: colors.textSecondary }]}>{descricao || 'Descrição não disponível.'}</Text>
           </View>
 
-          {/* ENDEREÇO */}
           {endereco && (
             <View style={styles.secao}>
               <Text style={[styles.secaoTitulo, { color: colors.textPrimary }]}>{t('address', 'Endereço')}</Text>
@@ -648,13 +435,7 @@ export default function DetalhesScreen({ route, navigation }) {
             </View>
           )}
 
-          <OfflineMapCard
-            latitude={lat}
-            longitude={lng}
-            nome={displayNome}
-            endereco={endereco}
-            isDark={isDark}
-          />
+          <OfflineMapCard latitude={lat} longitude={lng} nome={displayNome} endereco={endereco} isDark={isDark} />
 
           {hasValidCoords && (
             <TouchableOpacity style={styles.botaoMapaEstilizado} onPress={abrirNoMapa} activeOpacity={0.85}>
@@ -662,7 +443,6 @@ export default function DetalhesScreen({ route, navigation }) {
               <Text style={styles.botaoMapaTexto}>📍 {t('openInMaps', 'Ver rota no mapa')}</Text>
             </TouchableOpacity>
           )}
-
         </View>
       </ScrollView>
     </View>
