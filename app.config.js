@@ -1,22 +1,21 @@
 require('dotenv').config({ path: `.env.${process.env.APP_ENV || 'rolante'}` });
 
 console.log('🔍 [APP.CONFIG] APP_ENV:', process.env.APP_ENV);
-console.log('🔍 [APP.CONFIG] CITY_ID:', process.env.CITY_ID);
-console.log('🔍 [APP.CONFIG] APP_NAME:', process.env.APP_NAME);
 console.log('🔍 [APP.CONFIG] APP_ID:', process.env.APP_ID);
+console.log('🔍 [APP.CONFIG] APP_SPLASH:', process.env.APP_SPLASH);
 
 export default {
   expo: {
     name: process.env.APP_NAME || 'Guia da Cidade',
-    slug: 'guia-cidade-app', // FIXO para bater com o projectId do EAS
+    slug: 'guia-cidade-app',
     version: '1.0.0',
     orientation: 'portrait',
     icon: process.env.APP_ICON || './assets/icon.png',
     userInterfaceStyle: 'light',
     splash: {
-      image: process.env.APP_SPLASH || './assets/icon.png',
+      image: process.env.APP_SPLASH || './assets/splash.png',
       resizeMode: 'contain',
-      backgroundColor: process.env.APP_COLOR || '#ffffff'
+      backgroundColor: process.env.APP_COLOR || '#071B42'
     },
     assetBundlePatterns: ['**/*'],
     ios: {
@@ -26,7 +25,7 @@ export default {
     android: {
       adaptiveIcon: {
         foregroundImage: process.env.APP_ICON || './assets/icon.png',
-        backgroundColor: process.env.APP_COLOR || '#ffffff'
+        backgroundColor: process.env.APP_COLOR || '#071B42'
       },
       package: process.env.APP_ID || 'com.ianfraga.guianativo',
       softwareKeyboardLayoutMode: "resize"

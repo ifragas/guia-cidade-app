@@ -9,9 +9,9 @@
         "APP_ENV": "smart",
         "APP_NAME": "Smart Turismo",
         "APP_ID": "com.ianfraga.smartturismo",
-        "APP_COLOR": "#10b981",
+        "APP_COLOR": "#071B42",
         "APP_ICON": "./assets/icon.png",
-        "APP_SPLASH": "./assets/icon.png",
+        "APP_SPLASH": "./assets/splash.png",
         "CITY_ID": "smart"
       },
       "android": {
@@ -39,9 +39,9 @@
         "APP_ENV": "smart",
         "APP_NAME": "Smart Turismo (Dev)",
         "APP_ID": "com.ianfraga.smartturismo.dev",
-        "APP_COLOR": "#10b981",
+        "APP_COLOR": "#071B42",
         "APP_ICON": "./assets/icon.png",
-        "APP_SPLASH": "./assets/icon.png",
+        "APP_SPLASH": "./assets/splash.png",
         "CITY_ID": "smart"
       }
     },
