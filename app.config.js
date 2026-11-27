@@ -8,8 +8,7 @@ console.log('🔍 [APP.CONFIG] APP_ID:', process.env.APP_ID);
 export default {
   expo: {
     name: process.env.APP_NAME || 'Guia da Cidade',
-    // 🚨 OBRIGATÓRIO: Slug fixo para bater com o projectId do EAS
-    slug: 'guia-cidade-app', 
+    slug: 'guia-cidade-app', // FIXO para bater com o projectId do EAS
     version: '1.0.0',
     orientation: 'portrait',
     icon: process.env.APP_ICON || './assets/icon.png',
@@ -30,7 +29,7 @@ export default {
         backgroundColor: process.env.APP_COLOR || '#ffffff'
       },
       package: process.env.APP_ID || 'com.ianfraga.guianativo',
-      softwareKeyboardLayoutMode: "resize" 
+      softwareKeyboardLayoutMode: "resize"
     },
     web: {
       favicon: './assets/favicon.png'
