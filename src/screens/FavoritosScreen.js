@@ -1,4 +1,3 @@
-// src/screens/FavoritosScreen.js
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -82,7 +81,8 @@ export default function FavoritosScreen({ navigation }) {
         setIsOffline(true);
       }
 
-      const itensFavoritados = todosOsItens.filter(item => favIds.includes(item.id));
+      // 🚨 CORREÇÃO 1: Comparar sempre como STRING
+      const itensFavoritados = todosOsItens.filter(item => favIds.includes(String(item.id)));
       setFavoritosList(itensFavoritados);
     } catch (error) {
       console.error('Erro ao carregar favoritos:', error);
@@ -108,9 +108,11 @@ export default function FavoritosScreen({ navigation }) {
   const handleToggleFavorito = async (idItem, e) => {
     if (e) e.stopPropagation();
     if (!idItem) return;
-    const atualizados = await toggleFavorito(idItem);
+    
+    // 🚨 CORREÇÃO 2: Salvar sempre como STRING
+    const atualizados = await toggleFavorito(String(idItem));
     setFavoritosIds(atualizados);
-    setFavoritosList(prev => prev.filter(item => item.id !== idItem));
+    setFavoritosList(prev => prev.filter(item => String(item.id) !== String(idItem)));
   };
 
   let processados = [...favoritosList];
@@ -227,7 +229,8 @@ export default function FavoritosScreen({ navigation }) {
                   key={item.id.toString()}
                   item={item}
                   isDark={isDark}
-                  isFavorito={favoritosIds.includes(item.id)}
+                  // 🚨 CORREÇÃO 3: Comparar sempre como STRING
+                  isFavorito={favoritosIds.includes(String(item.id))}
                   userLocation={userLocation}
                   badgeType="Salvo"
                   onPress={() =>
