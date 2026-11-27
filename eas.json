@@ -1,19 +1,18 @@
 {
   "cli": {
-    "version": ">= 5.0.0"
+    "version": ">= 5.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "rolante": {
       "env": {
-        "APP_ENV": "rolante"
-      },
-      "android": {
-        "buildType": "apk"
-      }
-    },
-    "smart": {
-      "env": {
-        "APP_ENV": "smart"
+        "APP_ENV": "rolante",
+        "APP_NAME": "Guia Turístico Oficial de Rolante",
+        "APP_ID": "com.ianfraga.guiarolante",
+        "APP_COLOR": "#0066cc",
+        "APP_ICON": "./assets/icon.png",
+        "APP_SPLASH": "./assets/splash.png",
+        "CITY_ID": "rolante"
       },
       "android": {
         "buildType": "apk"
