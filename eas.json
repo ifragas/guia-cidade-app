@@ -32,7 +32,21 @@
         "buildType": "apk"
       }
     },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "smart",
+        "APP_NAME": "Smart Turismo (Dev)",
+        "APP_ID": "com.ianfraga.smartturismo.dev",
+        "APP_COLOR": "#10b981",
+        "APP_ICON": "./assets/icon.png",
+        "APP_SPLASH": "./assets/icon.png",
+        "CITY_ID": "smart"
+      }
+    },
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       }
