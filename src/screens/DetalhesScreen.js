@@ -455,21 +455,34 @@ export default function DetalhesScreen({ route, navigation }) {
         <View style={[styles.sheetContentContainer, { backgroundColor: colors.background }]}>
           
           <View style={styles.headerTitleRow}>
-            <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text>
-            </View>
+  <View style={styles.typeBadge}>
+    <Text style={styles.typeBadgeText}>{tipo || 'Atração'}</Text>
+  </View>
 
-            <View style={[
-              styles.statusBadge, 
-              { backgroundColor: estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)', borderColor: estaAberto ? '#10b981' : '#e11d48' }
-            ]}>
-              <Text style={{ color: estaAberto ? '#10b981' : '#e11d48', fontWeight: 'bold', fontSize: 11 }}>
-                {isEvento 
-                  ? (estaAberto ? '● Acontecendo Agora' : '● Em Breve') 
-                  : (ehSempreAberto ? '● Sempre Aberto' : (estaAberto ? '● Aberto Agora' : '● Fechado'))}
-              </Text>
-            </View>
-          </View>
+  {/* 🚨 CORREÇÃO: Badge usa cor verde quando é "Sempre Aberto", independente do estaAberto */}
+  {(() => {
+    const ehSempreAbertoReal = ehSempreAberto && !isEvento;
+    const corStatus = ehSempreAbertoReal ? '#10b981' : (estaAberto ? '#10b981' : '#e11d48');
+    const bgStatus = ehSempreAbertoReal ? 'rgba(16, 185, 129, 0.15)' : (estaAberto ? 'rgba(16, 185, 129, 0.15)' : 'rgba(225, 29, 72, 0.15)');
+    
+    let textoStatus;
+    if (isEvento) {
+      textoStatus = estaAberto ? '● Acontecendo Agora' : '● Em Breve';
+    } else if (ehSempreAbertoReal) {
+      textoStatus = '● Sempre Aberto';
+    } else {
+      textoStatus = estaAberto ? '● Aberto Agora' : '● Fechado';
+    }
+    
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: bgStatus, borderColor: corStatus }]}>
+        <Text style={{ color: corStatus, fontWeight: 'bold', fontSize: 11 }}>
+          {textoStatus}
+        </Text>
+      </View>
+    );
+  })()}
+</View>
 
           <Text style={[styles.titulo, { color: colors.textPrimary }]}>{displayNome}</Text>
 
