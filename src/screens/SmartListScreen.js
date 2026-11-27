@@ -8,9 +8,11 @@ import * as Location from 'expo-location';
 import { useCity } from '../context/CityContext';
 import { calcularDistancia } from '../utils/LocationHelper';
 import { obterCache } from '../services/cacheService';
+import api from '../services/api';
 import SkeletonOverlay from '../components/SkeletonOverlay';
 import useConnectivity from '../hooks/useConnectivity';
 import OfflineBanner from '../components/OfflineBanner';
+
 
 const FUNDO_URI = require('../../assets/fundo-selecao.jpg');
 const LOGO_URI = require('../../assets/smart-turismo.png');
