@@ -119,7 +119,7 @@ export default function CitySelectionScreen() {
             const isSelecionando = selecionando === item.slug;
             const icone = ICON_MAP[(item.categoriaIcone || '').toLowerCase()] || ICON_MAP.default;
             const corBadge = item.categoriaCor || item.corPrimaria || '#0284C7';
-            const imagemUri = item.heroImageUrl || item.imagemSplash;
+            const imagemUri = item.heroImageUrl || item.splashImageUrl || item.imagemSplash;
 
             return (
               <TouchableOpacity

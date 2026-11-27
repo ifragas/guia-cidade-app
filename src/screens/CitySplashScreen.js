@@ -12,6 +12,11 @@ export default function CitySplashScreen({ onFinished }) {
   const textFadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+
+    console.log('🔍 [CitySplashScreen] cidadeAtual:', cidadeAtual);
+    console.log('🔍 [CitySplashScreen] splashImageUrl:', cidadeAtual?.splashImageUrl);
+    console.log('🔍 [CitySplashScreen] heroImageUrl:', cidadeAtual?.heroImageUrl);
+
     if (!cidadeAtual) return;
 
     Animated.parallel([
@@ -37,12 +42,12 @@ export default function CitySplashScreen({ onFinished }) {
       <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
       <Animated.View style={[styles.imageContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        <Image
-          source={{ uri: cidadeAtual.heroImageUrl || cidadeAtual.imagemSplash }}
-          style={styles.image}
-          contentFit="cover"
-          transition={500}
-        />
+       <Image
+  source={{ uri: cidadeAtual.splashImageUrl || cidadeAtual.heroImageUrl || cidadeAtual.imagemSplash }}
+  style={styles.image}
+  contentFit="cover"
+  transition={500}
+/>
         
         {/* 🚨 GRADIENTE CROMÁTICO SOBRE A IMAGEM */}
         <LinearGradient

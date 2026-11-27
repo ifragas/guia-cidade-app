@@ -102,13 +102,14 @@ export function CityProvider({ children }) {
 
         if (Array.isArray(response) && response.length > 0) {
           const cidadesFormatadas = response.map((c) => ({
-            slug: c.slug,
-            nome: c.nome,
-            estado: c.estado,
-            corPrimaria: c.corPrimaria || '#4CAF50',
-            corSecundaria: c.corSecundaria || '#0B2D6B',
-            heroImageUrl: c.heroImageUrl || c.imagemSplash || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080',
-          }));
+  slug: c.slug,
+  nome: c.nome,
+  estado: c.estado,
+  corPrimaria: c.corPrimaria || '#4CAF50',
+  corSecundaria: c.corSecundaria || '#0B2D6B',
+  heroImageUrl: c.heroImageUrl || c.imagemSplash || 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080',
+  splashImageUrl: c.splashImageUrl || null,  // 🚨 ADICIONADO
+}));
           
           setCidadesDisponiveis(cidadesFormatadas);
           
